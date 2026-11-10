@@ -1,0 +1,111 @@
+Program Version,EnergyPlus, Version 25.2.0-cf7368216c, YMD=2026.10.21 21:58,
+   ************* Beginning Zone Sizing Calculations
+   ** Warning ** SetUpDesignDay: Entered DesignDay Barometric Pressure=31000 differs by more than 10% from Standard Barometric Pressure=100368.
+   **   ~~~   ** ...occurs in DesignDay=QUIXERAMOBIM SUMMER DESIGN DAY, Standard Pressure (based on elevation) will be used.
+   ** Warning ** GetHTSurfaceData: Surfaces with interface to Ground found but no "Ground Temperatures" were input.
+   **   ~~~   ** Found first in surface=SURFACE 1
+   **   ~~~   ** Defaults, constant throughout the year of (18.0) will be used.
+   ** Warning ** CheckUsedConstructions: There are 22 nominally unused constructions in input.
+   **   ~~~   ** For explicit details on each unused construction, use Output:Diagnostics,DisplayExtraWarnings;
+   ** Warning ** GetInternalHeatGains: People="189.1-2009 - OFFICE - LOBBY - CZ4-8 PEOPLE" has comfort related schedules but no thermal comfort model selected.
+   **   ~~~   ** If schedules are specified for air velocity, clothing insulation, and/or work efficiency but no thermal comfort
+   **   ~~~   ** thermal comfort model is selected, the schedules will be listed as unused schedules in the .err file.
+   **   ~~~   ** To avoid these errors, select a valid thermal comfort model or eliminate these schedules in the PEOPLE input.
+   ** Warning ** Calculated design heating load for zone=THERMAL ZONE 1 is zero.
+   **   ~~~   ** Check Sizing:Zone and ZoneControl:Thermostat inputs.
+   ** Severe  ** For object = Coil:Cooling:DX:SingleSpeed, name = "ELEC PTAC 1 SPD DX CLG COIL"
+   **   ~~~   ** Calculated outlet air temperature is lower than the dew point temperature at the same humidity ratio.
+   **   ~~~   ** ...Inlet Air Temperature                      = 26.67 C
+   **   ~~~   ** ...Outlet Air Temperature                     = 9.24 C
+   **   ~~~   ** ...Dew Point Temperature                      = 10.41 C
+   **   ~~~   ** ...Inlet Air Humidity Ratio                   = 1.118470E-002 kgWater/kgDryAir
+   **   ~~~   ** ...Outlet Air Humidity Ratio                  = 7.847535E-003 kgWater/kgDryAir
+   **   ~~~   ** ...Dew Point Humidity Ratio                   = 7.847535E-003 kgWater/kgDryAir
+   **   ~~~   ** ...Inlet Air Enthalpy                         = 55322.48 J/kg
+   **   ~~~   ** ...Outlet Air Enthalpy                        = 29045.73 J/kg
+   **   ~~~   ** ...Total Cooling Capacity used in calculation = 17580.00 W
+   **   ~~~   ** ...Air Mass Flow Rate used in calculation     = 0.669033 kg/s
+   **   ~~~   ** ...Air Volume Flow Rate used in calculation   = 0.578374 m3/s
+   **   ~~~   ** ...Sensible Heat Ratio                        = 0.68
+   **   ~~~   ** Check coil design sensible heat ratio, total gross rated capacity, and air flow inputs.
+   ** Warning ** Sizing: Coil:Cooling:DX:SingleSpeed "ELEC PTAC 1 SPD DX CLG COIL": Rated air volume flow rate per watt of rated total cooling capacity is out of range.
+   **   ~~~   ** Min Rated Vol Flow Per Watt=[4.027E-005], Rated Vol Flow Per Watt=[2.844E-005], Max Rated Vol Flow Per Watt=[6.041E-005]. See Input Output Reference Manual for valid range.
+   ** Severe  ** For object = Coil:Cooling:DX:SingleSpeed, name = "ELEC PTAC 1 SPD DX CLG COIL"
+   **   ~~~   ** Calculated outlet air temperature is lower than the dew point temperature at the same humidity ratio.
+   **   ~~~   ** ...Inlet Air Temperature                      = 26.67 C
+   **   ~~~   ** ...Outlet Air Temperature                     = 2.86 C
+   **   ~~~   ** ...Dew Point Temperature                      = 12.12 C
+   **   ~~~   ** ...Inlet Air Humidity Ratio                   = 1.118470E-002 kgWater/kgDryAir
+   **   ~~~   ** ...Outlet Air Humidity Ratio                  = 8.801213E-003 kgWater/kgDryAir
+   **   ~~~   ** ...Dew Point Humidity Ratio                   = 8.801213E-003 kgWater/kgDryAir
+   **   ~~~   ** ...Inlet Air Enthalpy                         = 55322.48 J/kg
+   **   ~~~   ** ...Outlet Air Enthalpy                        = 24926.91 J/kg
+   **   ~~~   ** ...Total Cooling Capacity used in calculation = 17580.00 W
+   **   ~~~   ** ...Air Mass Flow Rate used in calculation     = 0.578374 kg/s
+   **   ~~~   ** ...Air Volume Flow Rate used in calculation   = 0.500000 m3/s
+   **   ~~~   ** ...Sensible Heat Ratio                        = 0.80
+   **   ~~~   ** Check coil design sensible heat ratio, total gross rated capacity, and air flow inputs.
+   ** Warning ** For object = Coil:Cooling:DX:SingleSpeed, name = "ELEC PTAC 1 SPD DX CLG COIL"
+   **   ~~~   ** Calculated outlet air relative humidity greater than 1. The combination of
+   **   ~~~   ** rated air volume flow rate, total cooling capacity and sensible heat ratio yields coil exiting
+   **   ~~~   ** air conditions above the saturation curve. Possible fixes are to reduce the rated total cooling
+   **   ~~~   ** capacity, increase the rated air volume flow rate, or reduce the rated sensible heat ratio for this coil.
+   **   ~~~   ** If autosizing, it is recommended that all three of these values be autosized.
+   **   ~~~   ** ...Inputs used for calculating cooling coil bypass factor.
+   **   ~~~   ** ...Inlet Air Temperature     = 26.67 C
+   **   ~~~   ** ...Outlet Air Temperature    = 2.86 C
+   **   ~~~   ** ...Inlet Air Humidity Ratio  = 1.118470E-002 kgWater/kgDryAir
+   **   ~~~   ** ...Outlet Air Humidity Ratio = 8.801213E-003 kgWater/kgDryAir
+   **   ~~~   ** ...Total Cooling Capacity used in calculation = 17580.00 W
+   **   ~~~   ** ...Air Mass Flow Rate used in calculation     = 0.578374 kg/s
+   **   ~~~   ** ...Air Volume Flow Rate used in calculation   = 0.500000 m3/s
+   **   ~~~   ** ...Air Volume Flow Rate per Watt of Rated Cooling Capacity is also out of bounds at = 2.8441411E-005 m3/s/W
+   **   ~~~   **  During Warmup, Environment=QUIXERAMOBIM SUMMER DESIGN DAY, at Simulation time=03/21 00:00 - 00:10
+   **   ~~~   ** CalcCBF: SHR adjusted to achieve valid outlet air properties and the simulation continues.
+   **   ~~~   ** CalcCBF: initial SHR = 0.80000
+   **   ~~~   ** CalcCBF: adjusted SHR = 0.62214
+   ** Warning ** Output:Meter: invalid Key Name="NATURALGAS:FACILITY" - not found.
+   ** Warning ** Output:Meter: invalid Key Name="DISTRICTHEATINGWATER:FACILITY" - not found.
+   ** Warning ** Output:Meter: invalid Key Name="DISTRICTCOOLING:FACILITY" - not found.
+   ** Warning ** Output:Meter:MeterFileOnly: invalid Key Name="NATURALGAS:FACILITY" - not found.
+   ** Warning ** Output:Meter:MeterFileOnly requested for "Electricity:Facility" (TimeStep), already on "Output:Meter". Will report to both eplusout.eso and eplusout.mtr
+   ************* Testing Individual Branch Integrity
+   ************* All Branches passed integrity testing
+   ************* Testing Individual Supply Air Path Integrity
+   ************* All Supply Air Paths passed integrity testing
+   ************* Testing Individual Return Air Path Integrity
+   ************* All Return Air Paths passed integrity testing
+   ************* No node connection errors were found.
+   ************* Beginning Simulation
+   ** Warning ** Processing Monthly Tabular Reports: Variable names not valid for this simulation
+   **   ~~~   ** ...use Output:Diagnostics,DisplayExtraWarnings; to show more details on individual variables.
+   ** Warning ** In zone THERMAL ZONE 1 there is unbalanced air flow. Load due to induced outdoor air is neglected.
+   **   ~~~   **  Environment=QUIXERAMOBIM SUMMER DESIGN DAY, at Simulation time=03/21 06:00 - 06:10
+   **   ~~~   **   Flows [m3/s]: Inlets: 4.971515E-002  Unbalanced exhausts: 0.500000  Returns: 0.000000
+   **   ~~~   **   Infiltration: 9.494218E-003  Zone Ventilation: 0.000000  Mixing (incoming): 0.000000
+   **   ~~~   **   Imbalance (excess outflow): 0.440791  Total system OA flow (for all airloops serving this zone): 0.000000
+   **   ~~~   **   This error will only be reported once per zone.
+   ** Warning ** The resource referenced by LifeCycleCost:UsePriceEscalation= "U.S. AVG  COMMERCIAL-ELECTRICITY" has no energy cost. 
+   **   ~~~   ** ... It is likely that the wrong resource is used. The resource should match the meter used in Utility:Tariff.
+   ** Warning ** The resource referenced by LifeCycleCost:UsePriceEscalation= "U.S. AVG  COMMERCIAL-DISTILLATE OIL" has no energy cost. 
+   **   ~~~   ** ... It is likely that the wrong resource is used. The resource should match the meter used in Utility:Tariff.
+   ** Warning ** The resource referenced by LifeCycleCost:UsePriceEscalation= "U.S. AVG  COMMERCIAL-RESIDUAL OIL" has no energy cost. 
+   **   ~~~   ** ... It is likely that the wrong resource is used. The resource should match the meter used in Utility:Tariff.
+   ** Warning ** The resource referenced by LifeCycleCost:UsePriceEscalation= "U.S. AVG  COMMERCIAL-NATURAL GAS" has no energy cost. 
+   **   ~~~   ** ... It is likely that the wrong resource is used. The resource should match the meter used in Utility:Tariff.
+   ** Warning ** The resource referenced by LifeCycleCost:UsePriceEscalation= "U.S. AVG  COMMERCIAL-COAL" has no energy cost. 
+   **   ~~~   ** ... It is likely that the wrong resource is used. The resource should match the meter used in Utility:Tariff.
+   ************* Simulation Error Summary *************
+   ************* There are 22 unused schedules in input.
+   ************* Use Output:Diagnostics,DisplayUnusedSchedules; to see them.
+   *************
+   ************* ===== Final Error Summary =====
+   ************* The following error categories occurred.  Consider correcting or noting.
+   ************* Nominally Unused Constructions
+   ************* ..The nominally unused constructions warning is provided to alert you to potential conditions that can cause
+   ************* ..extra time during simulation. Each construction is calculated by the algorithm indicated in the HeatBalanceAlgorithm
+   ************* ..object. You may remove the constructions indicated (when you use the DisplayExtraWarnings option).
+   *************
+   ************* EnergyPlus Warmup Error Summary. During Warmup: 0 Warning; 0 Severe Errors.
+   ************* EnergyPlus Sizing Error Summary. During Sizing: 5 Warning; 0 Severe Errors.
+   ************* EnergyPlus Completed Successfully-- 19 Warning; 2 Severe Errors; Elapsed Time=00hr 00min  3.46sec
