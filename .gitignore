@@ -1,0 +1,12 @@
+*.log
+*.env
+
+data_pint_out.json
+results.json
+measure_attributes.json
+
+.ipynb_checkpoints/
+venv_projeto/
+dist/
+build/
+temp/
