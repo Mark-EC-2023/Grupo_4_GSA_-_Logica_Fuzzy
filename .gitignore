@@ -1,7 +1,7 @@
 *.log
 *.env
 
-data_pint_out.json
+data_point_out.json
 results.json
 measure_attributes.json
 
