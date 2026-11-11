@@ -26,7 +26,36 @@ O processo é planejado para a situação de como o microcontrolador deva se com
 Sensor -> filtragem -> fuzzificação -> regras fuzzy -> agregação -> centroide -> MQTT
 '''
 
-	Dados rececbidos
+## Desenvolvimento
+
+A tabela de saída usada diretamente no protótipo fuzzy está em
+[`banco_dados_lhs_200.csv`](../Projeto/Data/banco_dados_lhs_200.csv) e contém
+200 pares de:
+
+- `LHS_Temperatura_C`;
+- `LHS_Umidade_%`.
+
+As amostras dessa tabela foram geradas com `scipy.stats.qmc.LatinHypercube`,
+com duas variáveis e semente 42, escaladas para os limites físicos obtidos da
+simulação-base. Portanto, elas são adequadas para testar o controlador em
+diversas combinações de temperatura e umidade.
+
+### 3.1 Geração do Hipercubo Latino
+
+O LHS divide o intervalo de cada variável em estratos e seleciona uma amostra
+de cada estrato, combinando as dimensões de forma aleatória. Diferentemente de
+sortear todos os pontos livremente, essa estratégia reduz a concentração de
+amostras em uma mesma região e permite explorar o espaço de entrada com 200
+simulações.
+
+No projeto, o notebook
+[`Teste_Fuzzy.ipynb`](../Projeto/Teste_Fuzzy.ipynb) registra duas etapas:
+
+1. geração da matriz LHS com os parâmetros de simulação
+   (`temp_setpoint`, `potencia_equip`, `taxa_infiltracao` e
+   `n_ocupantes`);
+2. geração de 200 pares de temperatura e umidade a partir dos limites da
+   simulação-base.
 
 	Desenvolvimento
 
