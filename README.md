@@ -24,7 +24,7 @@ O processo é planejado para a situação de como o microcontrolador deva se com
 
 ```text
 Sensor -> filtragem -> fuzzificação -> regras fuzzy -> agregação -> centroide -> MQTT
-'''
+```
 
 ## Desenvolvimento
 
