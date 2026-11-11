@@ -2,6 +2,7 @@
 """Lê uma temperatura e imprime o centroide do controlador fuzzy."""
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -20,6 +21,17 @@ def main() -> int:
         type=float,
         help="temperatura em graus Celsius; sem este valor, será lida do terminal",
     )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=Path("centroide.json"),
+        help="arquivo JSON do payload MQTT (padrão: centroide.json)",
+    )
+    parser.add_argument(
+        "--json-only",
+        action="store_true",
+        help="imprime somente o JSON, adequado para publicação MQTT",
+    )
     args = parser.parse_args()
 
     temperature = args.temperature
@@ -34,12 +46,23 @@ def main() -> int:
     except ValueError as error:
         parser.error(str(error))
 
+    payload = json.dumps(result.to_mqtt_payload(), ensure_ascii=False, indent=2)
+    try:
+        args.output.write_text(f"{payload}\n", encoding="utf-8")
+    except OSError as error:
+        parser.error(f"não foi possível gravar o JSON em {args.output}: {error}")
+
+    if args.json_only:
+        print(payload)
+        return 0
+
     print(f"Temperatura: {result.temperature:.2f} °C")
     print(
         "Pertinências [frio, morno, quente]: "
         f"[{result.cold:.3f}, {result.warm:.3f}, {result.hot:.3f}]"
     )
     print(f"Centroide: {result.centroid:.2f}%")
+    print(f"Payload MQTT salvo em: {args.output}")
     return 0
 
 

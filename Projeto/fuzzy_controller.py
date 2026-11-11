@@ -17,6 +17,23 @@ class FuzzyTemperatureResult:
     strong_activation: float
     centroid: float
 
+    def to_mqtt_payload(self) -> dict[str, object]:
+        """Converte o resultado para um payload JSON compatível com MQTT."""
+        return {
+            "temperature_c": self.temperature,
+            "membership": {
+                "cold": self.cold,
+                "warm": self.warm,
+                "hot": self.hot,
+            },
+            "activation": {
+                "weak": self.weak_activation,
+                "medium": self.medium_activation,
+                "strong": self.strong_activation,
+            },
+            "centroid_percent": self.centroid,
+        }
+
 
 def triangular(x: float, a: float, b: float, c: float) -> float:
     """Calcula a pertinência de x em uma função triangular."""

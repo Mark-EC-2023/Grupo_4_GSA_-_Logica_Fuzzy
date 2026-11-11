@@ -26,9 +26,8 @@ Sensor -> filtragem -> fuzzificação -> regras fuzzy -> agregação -> centroid
 
 ## Desenvolvimento
 
-A tabela de saída usada diretamente no protótipo fuzzy está em
-[`banco_dados_lhs_200.csv`](../Projeto/Data/banco_dados_lhs_200.csv) e contém
-200 pares de:
+A tabela de saída usada diretamente no protótipo fuzzy está em 'eplusout.sql', onde foi extraida e transfigurada para
+[`banco_dados_lhs_200.csv`](/Projeto/Data/banco_dados_lhs_200.csv), conténdo 200 pares de:
 
 - `LHS_Temperatura_C`;
 - `LHS_Umidade_%`.
@@ -47,7 +46,7 @@ amostras em uma mesma região e permite explorar o espaço de entrada com 200
 simulações.
 
 No projeto, o notebook
-[`Teste_Fuzzy.ipynb`](../Projeto/Teste_Fuzzy.ipynb) registra duas etapas:
+[`Teste_Fuzzy.ipynb`](/Projeto/Teste_Fuzzy.ipynb) registra duas etapas:
 
 1. geração da matriz LHS com os parâmetros de simulação
    (`temp_setpoint`, `potencia_equip`, `taxa_infiltracao` e
@@ -101,6 +100,8 @@ saida = soma(nivel * pertinencia_agregada(nivel))
         / soma(pertinencia_agregada(nivel))
 ```
 
+![Formúla do centro de gravidade da aréa](/Documentação/imagens/centroid.png)
+
 Se nenhuma regra for ativada, o algoritmo deve tratar o denominador nulo e
 usar uma saída segura previamente definida, em vez de executar uma divisão por
 zero.
@@ -135,42 +136,43 @@ limitar a variação máxima da saída entre dois ciclos. A frequência de leitu
 o período de acionamento e os limites de segurança serão definidos conforme o
 sensor e o atuador escolhidos.
 
+### 3.5 Demosntração grafica de Temperatura separada de umidade
+
+![Imagen da entrada de um dos valores da tabela HLS tornando uma variavel nebulosa](/Documentação/imagens/Only_temp_example.png)
+![Imagen da saida de um valor nebuloso para um valor proporcial linear, ideal para respostas diretas ao microcontrolador](/Documentação/imagens/Only_temp_defuzzy_example.png)
+
 ## 4. Problemas encontrados
 
 1. **Diferença entre as bases:** a matriz LHS de quatro parâmetros representa
-   entradas da simulação, enquanto o banco LHS de duas colunas representa
-   temperatura e umidade. É necessário documentar claramente se a primeira
+   entradas da simulação de temperatura e umidade apenas.  É necessário documentar claramente se a primeira
    será usada apenas para gerar cenários ou se suas saídas serão incorporadas
-   ao treinamento/validação.
+   ao treinamento/validação. É também notado que no relatório .html recebido pelo grupo 2 que há referencias sobre o consumo gerado pelos ventiladores da sala, mas não há dados prontos para a geração de calor produzida para adicionar a complexidade do algoritmo.
+
+
 2. **Protótipo ainda não embarcado:** o notebook depende de Python, NumPy,
    SciPy, Matplotlib e scikit-fuzzy. Essas dependências não devem ser levadas
-   diretamente para o microcontrolador.
+   diretamente para o microcontrolador. E caso seja proposto a Programação e processamento desses dados exclusivamente via serviço de outra maquina, deverá tera contato com o grupo 3 sobre.
+
 3. **Regras incompletas:** a implementação registrada contém três regras
    iniciais e não cobre todas as nove combinações entre os três conjuntos de
-   temperatura e os três de umidade.
+   temperatura e os três de umidade, está em processo sobre como interpretaremos as variaveis de temperatura e umidade como complementares, ou distintas uma da outra.
+
 4. **Validação física pendente:** ainda não há, no material atual, identificação
    definitiva do sensor, da placa, do atuador nem ensaios comparando o comando
    fuzzy com uma referência de conforto.
-5. **Tratamento de falhas:** leituras fora da faixa, falhas de comunicação e
-   divisão por zero precisam ser tratados explicitamente no código embarcado.
-6. **Oscilação do controle:** pequenas variações na leitura podem provocar
-   mudanças frequentes no PWM; filtragem e histerese devem ser avaliadas.
 
-## 5. O que faremos?
+## 5. O que estamos trabalhando no momento, de ordem prioritária.
 
-1. Consolidar a origem, unidade e finalidade de cada coluna das duas bases.
-2. Completar a tabela de regras fuzzy e revisar os limiares com o grupo e com
-   os dados de conforto.
-3. Criar testes automatizados para pontos frios, confortáveis, quentes,
+1. Completar a tabela de regras fuzzy e revisar os limiares com o grupo 3 e com
+   os dados de conforto, de forma mais confortável ao envio do json.
+
+2. Criar testes automatizados para pontos frios, confortáveis, quentes,
    secos, ideais, úmidos e para entradas fora da faixa.
-4. Comparar a saída do notebook com uma implementação independente em C/C++,
-   verificando tolerância numérica do centroide.
-5. Escolher o microcontrolador, o sensor e o atuador; definir o período de
-   amostragem e a saída elétrica segura.
-6. Portar as funções de pertinência, regras e centroide para o firmware.
-7. Testar primeiro com valores simulados e depois com o sensor real, registrando
-   temperatura, umidade, saída fuzzy e estado do atuador.
-8. Ajustar os parâmetros após os ensaios e documentar os resultados finais,
+
+3. Testar primeiro com valores simulados e depois com o sensor real, registrando
+   temperatura, umidade, a influencia da sala com onúmero de pessoas presentes, saída fuzzy e estado do atuador.
+
+4. Ajustar os parâmetros após os ensaios e documentar os resultados finais,
    incluindo limitações e possíveis trabalhos futuros.
 
 ## Conclusão
@@ -194,4 +196,31 @@ Para calcular o centroide diretamente no terminal:
 
 ```bash
 python Projeto/scripts/gerar_centroide.py 22.142539
+```
+
+O script também grava o payload MQTT em `centroide.json`. 
+
+```bash
+python Projeto/scripts/gerar_centroide.py 22.142539 \
+  --output payload.json --json-only
+```
+
+O payload contém `temperature_c`, os graus de pertinência, as ativações das
+regras e `centroid_percent`, pronto para ser enviado como mensagem MQTT:
+
+```json
+{
+  "temperature_c": 22.142539,
+  "membership": {
+    "cold": 0.2857461,
+    "warm": 0.4285078,
+    "hot": 0.0
+  },
+  "activation": {
+    "weak": 0.2857461,
+    "medium": 0.4285078,
+    "strong": 0.0
+  },
+  "centroid_percent": 40.33
+}
 ```
