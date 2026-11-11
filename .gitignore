@@ -11,3 +11,5 @@ venv_projeto/
 dist/
 build/
 temp/
+__pycache__/
+tests/

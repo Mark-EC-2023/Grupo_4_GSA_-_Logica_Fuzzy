@@ -22,9 +22,7 @@ decisão de controle adequada para um microcontrolador. A proposta planeja:
 
 O processo é planejado para a situação de como o microcontrolador deva se comportar com a entrada bruta de dados e como deverá agir sabendo que requitos indefinidos e subjetivos como  o que se considera "confontável". Onde com esse dado de entrada passando por uma fuzzificação para deixar-lo com níveis de intenciadade de uma característica e com uso das regras fuzzy, encontrar o valor satisfatório dentro das regras, onde poderá ser representado para o microcontrolador como um valor de intensidade linear. 
 
-```text
 Sensor -> filtragem -> fuzzificação -> regras fuzzy -> agregação -> centroide -> MQTT
-```
 
 ## Desenvolvimento
 
@@ -184,3 +182,16 @@ validar a equivalência entre o protótipo Python e o algoritmo executado no
 microcontrolador. Com essa validação, a leitura contínua de temperatura e
 umidade poderá ser convertida em um comando de controle simples, interpretável
 e adequado a recursos embarcados.
+
+## Versão modular
+
+A versão reutilizável do controlador está em
+[`Projeto/fuzzy_controller.py`](Projeto/fuzzy_controller.py). O notebook
+[`Projeto/Teste_Fuzzy_Modular.ipynb`](Projeto/Teste_Fuzzy_Modular.ipynb) apenas
+importa o módulo e demonstra a temperatura usada nos exemplos.
+
+Para calcular o centroide diretamente no terminal:
+
+```bash
+python Projeto/scripts/gerar_centroide.py 22.142539
+```
