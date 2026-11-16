@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from math import isfinite
+from time import time
 
 
 @dataclass(frozen=True)
@@ -18,7 +19,7 @@ class FuzzyTemperatureResult:
     centroid: float
 
     def to_mqtt_payload(self) -> dict[str, object]:
-        """Converte o resultado para um payload JSON compatível com MQTT."""
+        """Converte o resultado detalhado para o payload MQTT legado."""
         return {
             "temperature_c": self.temperature,
             "membership": {
@@ -33,6 +34,14 @@ class FuzzyTemperatureResult:
             },
             "centroid_percent": self.centroid,
         }
+
+    def to_control_payload(self, ts_ms: int | None = None) -> dict[str, int | float]:
+        """Converte o resultado para o contrato mínimo consumido pela central."""
+        if ts_ms is None:
+            ts_ms = int(time() * 1000)
+        if not isinstance(ts_ms, int) or ts_ms < 0:
+            raise ValueError("ts_ms deve ser um inteiro não negativo")
+        return {"ts_ms": ts_ms, "level": self.centroid}
 
 
 def triangular(x: float, a: float, b: float, c: float) -> float:
@@ -60,12 +69,12 @@ def trapezoidal(x: float, a: float, b: float, c: float, d: float) -> float:
         raise ValueError("x e os parâmetros da função devem ser finitos")
     if a > b or b > c or c > d:
         raise ValueError("a, b, c e d devem estar em ordem crescente")
-    if x < a or x > d:
-        return 0.0
     if b == a and x <= b:
         return 1.0
     if c == d and x >= c:
         return 1.0
+    if x < a or x > d:
+        return 0.0
     if x < b:
         return (x - a) / (b - a)
     if x <= c:
@@ -115,8 +124,9 @@ def temperature_centroid(temperature: float, samples: int = 1000) -> FuzzyTemper
         raise ValueError("temperature deve ser um número finito")
 
     cold = triangular(temperature, 15.0, 15.0, 25.0)
-    warm = triangular(temperature, 20.0, 25.0, 32.0)
-    hot = trapezoidal(temperature, 28.0, 35.0, 45.0, 45.0)
+    warm = triangular(temperature, 20.0, 26.0, 32.0)
+    # The overlap beginning at 24 °C avoids a flat 50% control region.
+    hot = trapezoidal(temperature, 24.0, 35.0, 45.0, 45.0)
     centroid = _centroid(cold, warm, hot, samples)
 
     return FuzzyTemperatureResult(

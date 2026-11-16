@@ -32,6 +32,11 @@ def main() -> int:
         action="store_true",
         help="imprime somente o JSON, adequado para publicação MQTT",
     )
+    parser.add_argument(
+        "--ts-ms",
+        type=int,
+        help="timestamp Unix em milissegundos; por padrão, usa o instante do cálculo",
+    )
     args = parser.parse_args()
 
     temperature = args.temperature
@@ -46,7 +51,11 @@ def main() -> int:
     except ValueError as error:
         parser.error(str(error))
 
-    payload = json.dumps(result.to_mqtt_payload(), ensure_ascii=False, indent=2)
+    try:
+        payload_data = result.to_control_payload(args.ts_ms)
+    except ValueError as error:
+        parser.error(str(error))
+    payload = json.dumps(payload_data, ensure_ascii=False, separators=(",", ":"))
     try:
         args.output.write_text(f"{payload}\n", encoding="utf-8")
     except OSError as error:

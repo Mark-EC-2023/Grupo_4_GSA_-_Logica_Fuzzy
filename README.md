@@ -198,29 +198,72 @@ Para calcular o centroide diretamente no terminal:
 python Projeto/scripts/gerar_centroide.py 22.142539
 ```
 
-O script também grava o payload MQTT em `centroide.json`. 
+O script também grava em `centroide.json` o payload mínimo consumido pela
+central. O tópico deve ser combinado com o grupo 3; uma sugestão é
+`grupo4/fuzzy/level`. A publicação deve ocorrer a cada 60 s, com QoS 1 e
+`retain=False`:
 
 ```bash
 python Projeto/scripts/gerar_centroide.py 22.142539 \
   --output payload.json --json-only
 ```
 
-O payload contém `temperature_c`, os graus de pertinência, as ativações das
-regras e `centroid_percent`, pronto para ser enviado como mensagem MQTT:
+O payload publicado deve conter somente o instante NTP do cálculo e o nível:
 
 ```json
 {
-  "temperature_c": 22.142539,
-  "membership": {
-    "cold": 0.2857461,
-    "warm": 0.4285078,
-    "hot": 0.0
-  },
-  "activation": {
-    "weak": 0.2857461,
-    "medium": 0.4285078,
-    "strong": 0.0
-  },
-  "centroid_percent": 40.33
+  "ts_ms": 1731590400123,
+  "level": 40.33
 }
 ```
+
+`level` varia de 0 a 100: zero significa nenhuma necessidade de resfriamento
+e 100 significa resfriamento máximo. O grupo 3 deve consumir `ts_ms` para
+validar a idade da amostra; não se deve usar o horário de escrita no Influx.
+Se não houver uma amostra válida na janela de 150 s, a publicação deve ser
+omitida para que a central entre em modo seguro.
+
+O controlador atual usa somente temperatura. Embora a documentação inicial
+descreva conjuntos de umidade, eles ainda não participam das regras
+implementadas; isso precisa ser explicitamente alinhado antes de alterar o
+contrato do fuzzy.
+
+### Integração MQTT
+
+O serviço [`Projeto/mqtt_bridge.py`](Projeto/mqtt_bridge.py) implementa a
+ponte entre a ESP32, o fuzzy e a central. Ele espera telemetria neste formato:
+
+```json
+{
+  "node_id": "sala-1",
+  "temperature_c": 30.0,
+  "ts_ms": 1731590400123
+}
+```
+
+Por padrão, ele:
+
+- assina `grupo4/esp32/telemetry` com QoS 1;
+- mantém o último valor de cada nó;
+- considera válido somente `ts_ms` com até 150 s de idade;
+- calcula a média dos nós válidos;
+- publica o resultado a cada 60 s em `grupo4/fuzzy/level` e
+  `grupo4/ac/command`, com QoS 1 e `retain=False`;
+- não publica quando não existe amostra válida.
+
+Instale as dependências e execute:
+
+```bash
+pip install -r requirements.txt
+MQTT_HOST=192.168.0.50 python Projeto/mqtt_bridge.py
+```
+
+O broker Mosquitto deve estar executando em `192.168.0.50` (substitua pelo IP
+da máquina servidora). Os parâmetros podem ser alterados por ambiente:
+`MQTT_HOST`, `MQTT_PORT`, `MQTT_TELEMETRY_TOPIC`, `MQTT_LEVEL_TOPIC`,
+`MQTT_COMMAND_TOPIC`, `MQTT_PUBLISH_INTERVAL` e `MQTT_SAMPLE_MAX_AGE`.
+
+O grupo 3 ainda precisa confirmar os tópicos oficiais e o formato do comando
+que a ESP32 aplicará. A leitura do InfluxDB também não está neste repositório;
+até sua integração, a ponte usa a telemetria MQTT e calcula a idade diretamente
+com o `ts_ms` enviado pelo nó.
