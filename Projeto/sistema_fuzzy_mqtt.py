@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Sistema único de controle fuzzy e integração MQTT."""
 
 import argparse
 import json
@@ -9,6 +8,8 @@ import time
 from math import isfinite
 from typing import Any
 
+
+# Para caso falte bibliotecas
 try:
     import paho.mqtt.client as mqtt
 except ImportError as error:
@@ -16,17 +17,53 @@ except ImportError as error:
         "Dependência ausente: instale com 'pip install -r requirements.txt'"
     ) from error
 
+try:
+    from influxdb_client import InfluxDBClient
+except ImportError:
+    InfluxDBClient = None
 
-LOGGER = logging.getLogger("sistema_fuzzy_mqtt")
 
-TELEMETRY_TOPIC = os.getenv("MQTT_TELEMETRY_TOPIC", "grupo4/esp32/telemetry")
-LEVEL_TOPIC = os.getenv("MQTT_LEVEL_TOPIC", "grupo4/fuzzy/level")
-COMMAND_TOPIC = os.getenv("MQTT_COMMAND_TOPIC", "grupo4/ac/command")
-MQTT_HOST = os.getenv("MQTT_HOST", "localhost")
-MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
+Porta_Mqtt = 1883
+Host_Mqtt = "192.168.0.X" #exemplo
 PUBLISH_INTERVAL_SECONDS = float(os.getenv("MQTT_PUBLISH_INTERVAL", "60"))
 SAMPLE_MAX_AGE_SECONDS = float(os.getenv("MQTT_SAMPLE_MAX_AGE", "150"))
 
+
+
+# Definições para o Mqtt
+LOGGER = logging.getLogger("sistema_fuzzy_mqtt")
+
+TELEMETRY_TOPIC = os.getenv("MQTT_TELEMETRY_TOPIC", "/esp32/telemetry")
+LEVEL_TOPIC = os.getenv("MQTT_LEVEL_TOPIC", "/fuzzy/level")
+COMMAND_TOPIC = os.getenv("MQTT_COMMAND_TOPIC", "/esp32/command")
+
+MQTT_HOST = os.getenv("MQTT_HOST", Host_Mqtt) # Definir IP local da sala
+MQTT_PORT = int(os.getenv("MQTT_PORT", Porta_Mqtt))
+
+
+#// Implementação do InfuxDb
+INFLUX_URL = os.getenv("INFLUX_URL", "http://3.135.246.204:8086")
+INFLUX_TOKEN = os.getenv("INFLUX_TOKEN")
+
+INFLUX_ORG = os.getenv("INFLUX_ORG", "minha_org")
+INFLUX_BUCKET = os.getenv("INFLUX_BUCKET", "wsn")
+
+INFLUX_MEASUREMENT = os.getenv("INFLUX_MEASUREMENT", "telemetry")
+
+INFLUX_TEMPERATURE_FIELD = os.getenv(
+    "INFLUX_TEMPERATURE_FIELD",
+    "temperature_c",
+)
+INFLUX_HUMIDITY_FIELD = os.getenv(
+    "INFLUX_HUMIDITY_FIELD",
+    "humidity_percent",
+)
+
+INFLUX_NODE_TAG = os.getenv("INFLUX_NODE_TAG", "node_id")
+INFLUX_POLL_SECONDS = float(os.getenv("INFLUX_POLL_SECONDS", "30"))
+
+
+# Definições das areas fuzzy
 
 def triangular(x: float, a: float, b: float, c: float) -> float:
     """Calcula a pertinência em uma função triangular."""
@@ -101,6 +138,8 @@ def calculate_fuzzy_level(temperature: float, samples: int = 1000) -> dict[str, 
     }
 
 
+# Montagem dos Jsons
+
 def parse_telemetry(payload: bytes | str) -> dict[str, Any]:
     """Valida e normaliza o JSON publicado pela ESP32."""
     data: Any = json.loads(payload)
@@ -126,12 +165,91 @@ def parse_telemetry(payload: bytes | str) -> dict[str, Any]:
     }
 
 
+
+# EM TESTES
+class InfluxSource:
+    """Consulta o último registro de temperatura de cada nó no InfluxDB."""
+
+    def __init__(self) -> None:
+        if not INFLUX_TOKEN:
+            raise RuntimeError(
+                "INFLUX_TOKEN não configurado; exporte o token por ambiente"
+            )
+        if InfluxDBClient is None:
+            raise RuntimeError(
+                "dependência ausente: instale influxdb-client"
+            )
+        self.client = InfluxDBClient(
+            url=INFLUX_URL,
+            token=INFLUX_TOKEN,
+            org=INFLUX_ORG,
+            timeout=10_000,
+        )
+        self.query_api = self.client.query_api()
+
+    def close(self) -> None:
+        self.client.close()
+
+    def read_latest(self) -> dict[str, dict[str, Any]]:
+        """Retorna uma amostra por nó usando a hora registrada pelo InfluxDB."""
+        query = (
+            'from(bucket: "' + INFLUX_BUCKET + '")\n'
+            f'  |> range(start: -{int(SAMPLE_MAX_AGE_SECONDS)}s)\n'
+            f'  |> filter(fn: (r) => r._measurement == "{INFLUX_MEASUREMENT}")\n'
+            f'  |> filter(fn: (r) => r._field == "{INFLUX_TEMPERATURE_FIELD}" '
+            f'|| r._field == "{INFLUX_HUMIDITY_FIELD}")\n'
+            "  |> last()"
+        )
+
+        latest: dict[str, dict[str, Any]] = {}
+        for table in self.query_api.query(query):
+            for record in table.records:
+                node_id = record.values.get(INFLUX_NODE_TAG)
+                timestamp = record.get_time()
+                field = record.get_field()
+                value = record.get_value()
+                if not isinstance(node_id, str) or timestamp is None:
+                    continue
+                if not isinstance(value, (int, float)):
+                    continue
+
+                ts_ms = int(timestamp.timestamp() * 1000)
+                sample = latest.setdefault(
+                    node_id,
+                    {
+                        "node_id": node_id,
+                        "temperature_c": None,
+                        "humidity_percent": None,
+                        "ts_ms": ts_ms,
+                    },
+                )
+                if field == INFLUX_TEMPERATURE_FIELD:
+                    sample["temperature_c"] = float(value)
+                elif field == INFLUX_HUMIDITY_FIELD:
+                    sample["humidity_percent"] = float(value)
+                sample["ts_ms"] = max(sample["ts_ms"], ts_ms)
+
+        return {
+            node_id: sample
+            for node_id, sample in latest.items()
+            if sample["temperature_c"] is not None
+        }
+
+
 class FuzzyMqttSystem:
     """Recebe dados, calcula o conforto térmico e publica os comandos."""
 
     def __init__(self) -> None:
         self.samples: dict[str, dict[str, Any]] = {}
+        self.influx_samples: dict[str, dict[str, Any]] = {}
         self.last_publish_ms = 0
+        self.last_influx_poll_ms = 0
+        self.influx_source: InfluxSource | None = None
+        if INFLUX_TOKEN:
+            try:
+                self.influx_source = InfluxSource()
+            except RuntimeError as error:
+                LOGGER.error("InfluxDB não iniciado: %s", error)
         self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
         self.client.on_connect = self.on_connect
         self.client.on_message = self.on_message
@@ -169,11 +287,16 @@ class FuzzyMqttSystem:
         except (json.JSONDecodeError, ValueError) as error:
             LOGGER.warning("telemetria descartada: %s", error)
 
-    def valid_samples(self, now_ms: int) -> list[dict[str, Any]]:
+    def valid_samples(
+        self,
+        now_ms: int,
+        merged_samples: dict[str, dict[str, Any]] | None = None,
+    ) -> list[dict[str, Any]]:
         """Seleciona apenas leituras cuja idade é menor que 150 segundos."""
         valid = []
         max_age_ms = SAMPLE_MAX_AGE_SECONDS * 1000
-        for sample in self.samples.values():
+        source = merged_samples if merged_samples is not None else self.samples
+        for sample in source.values():
             age_ms = now_ms - sample["ts_ms"]
             if 0 <= age_ms <= max_age_ms:
                 valid.append(sample)
@@ -182,11 +305,32 @@ class FuzzyMqttSystem:
     def publish_if_due(self, now_ms: int | None = None) -> bool:
         """Calcula e publica o nível, quando necessário e seguro."""
         now_ms = int(time.time() * 1000) if now_ms is None else now_ms
+
+        if (
+            self.influx_source is not None
+            and now_ms - self.last_influx_poll_ms
+            >= INFLUX_POLL_SECONDS * 1000
+        ):
+            try:
+                self.influx_samples = self.influx_source.read_latest()
+                self.last_influx_poll_ms = now_ms
+                LOGGER.info(
+                    "InfluxDB consultado: %d nó(s)",
+                    len(self.influx_samples),
+                )
+            except Exception as error:
+                LOGGER.warning("falha ao consultar o InfluxDB: %s", error)
+
         interval_ms = PUBLISH_INTERVAL_SECONDS * 1000
         if now_ms - self.last_publish_ms < interval_ms:
             return False
 
-        samples = self.valid_samples(now_ms)
+        merged_samples = dict(self.influx_samples)
+        merged_samples.update(self.samples)
+        samples = self.valid_samples(
+            now_ms,
+            merged_samples=merged_samples,
+        )
         if not samples:
             LOGGER.warning(
                 "nenhuma amostra válida na janela de %.0f s; mensagem omitida",
@@ -236,8 +380,10 @@ class FuzzyMqttSystem:
                 self.publish_if_due()
                 time.sleep(1)
         except KeyboardInterrupt:
-            LOGGER.info("encerrando o sistema")
+            LOGGER.info("encerrando...")
         finally:
+            if self.influx_source is not None:
+                self.influx_source.close()
             self.client.loop_stop()
             self.client.disconnect()
 
@@ -254,6 +400,25 @@ def run_single_calculation(temperature: float) -> None:
     }, ensure_ascii=False))
 
 
+def test_influx_connection() -> int:
+    """Consulta uma vez o InfluxDB e imprime os nós encontrados."""
+    try:
+        source = InfluxSource()
+    except RuntimeError as error:
+        LOGGER.error("%s", error)
+        return 1
+
+    try:
+        samples = source.read_latest()
+        print(json.dumps(samples, ensure_ascii=False, indent=2))
+        return 0
+    except Exception as error:
+        LOGGER.error("falha na consulta ao InfluxDB: %s", error)
+        return 1
+    finally:
+        source.close()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Sistema fuzzy integrado ao MQTT"
@@ -262,6 +427,11 @@ def main() -> int:
         "--temperature",
         type=float,
         help="executa somente o cálculo e não inicia o broker",
+    )
+    parser.add_argument(
+        "--test-influx",
+        action="store_true",
+        help="consulta o InfluxDB uma vez e encerra",
     )
     args = parser.parse_args()
 
@@ -272,6 +442,8 @@ def main() -> int:
     if args.temperature is not None:
         run_single_calculation(args.temperature)
         return 0
+    if args.test_influx:
+        return test_influx_connection()
 
     FuzzyMqttSystem().run()
     return 0
