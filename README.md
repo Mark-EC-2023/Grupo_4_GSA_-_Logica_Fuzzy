@@ -3,7 +3,7 @@ Repositório destinado para a organização das 200 simulações estocásticas L
 
 Relatório Instrumentalização grupo 4
 
-Nome equipe: Juan, Monaliza, Gabriel Braga, Marcos
+Nome equipe: Juan, Monalisa, Gabriel Braga, Marcos
 
 Assuntos - 
 
