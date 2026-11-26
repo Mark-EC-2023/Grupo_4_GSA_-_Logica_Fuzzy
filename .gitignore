@@ -14,3 +14,6 @@ build/
 temp/
 __pycache__/
 tests/
+!Projeto/tests/
+Projeto/tests/*
+!Projeto/tests/test_fuzzy_api.py

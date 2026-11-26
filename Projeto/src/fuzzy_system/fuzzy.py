@@ -54,20 +54,7 @@ def trapezoidal(x: float, a: float, b: float, c: float, d: float) -> float:
     return (d - x) / (d - c)
 
 
-def temperature_centroid(
-    temperature: float,
-    samples: int = 1000,
-) -> FuzzyTemperatureResult:
-    """Calcula as pertinências fuzzy e o centroide da temperatura."""
-    if not isfinite(temperature):
-        raise ValueError("temperature deve ser um número finito")
-    if samples < 2:
-        raise ValueError("samples deve ser maior ou igual a 2")
-
-    cold = triangular(temperature, 15.0, 15.0, 25.0)
-    warm = triangular(temperature, 20.0, 26.0, 32.0)
-    hot = trapezoidal(temperature, 24.0, 35.0, 45.0, 45.0)
-
+def _output_centroid(cold: float, warm: float, hot: float, samples: int) -> float:
     numerator = 0.0
     denominator = 0.0
     for index in range(samples):
@@ -81,8 +68,37 @@ def temperature_centroid(
         aggregated = max(weak, medium, strong)
         numerator += output * aggregated
         denominator += aggregated
+    return numerator / denominator if denominator else 0.0
 
-    centroid = numerator / denominator if denominator else 0.0
+
+def temperature_centroid(
+    temperature: float,
+    samples: int = 1000,
+) -> FuzzyTemperatureResult:
+    """Calcula as pertinências fuzzy e o centroide da temperatura."""
+    if not isfinite(temperature):
+        raise ValueError("temperature deve ser um número finito")
+    if samples < 2:
+        raise ValueError("samples deve ser maior ou igual a 2")
+
+    cold = triangular(temperature, 15.0, 15.0, 25.0)
+    warm = triangular(temperature, 20.0, 26.0, 32.0)
+    hot = trapezoidal(temperature, 25.0, 45.0, 45.0, 45.0)
+
+    if temperature <= 15.0:
+        centroid = 0.0
+    elif temperature >= 45.0:
+        centroid = 100.0
+    else:
+        raw_centroid = _output_centroid(cold, warm, hot, samples)
+        minimum_centroid = _output_centroid(1.0, 0.0, 0.0, samples)
+        maximum_centroid = _output_centroid(0.0, 0.0, 1.0, samples)
+        centroid = 100.0 * (
+            (raw_centroid - minimum_centroid)
+            / (maximum_centroid - minimum_centroid)
+        )
+        centroid = min(100.0, max(0.0, centroid))
+
     return FuzzyTemperatureResult(
         temperature=temperature,
         cold=cold,
@@ -91,5 +107,5 @@ def temperature_centroid(
         weak_activation=cold,
         medium_activation=warm,
         strong_activation=hot,
-        centroid=centroid,
+        centroid=round(centroid, 2),
     )
