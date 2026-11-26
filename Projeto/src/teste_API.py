@@ -7,6 +7,7 @@ import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from math import isfinite
+from pathlib import Path
 from time import time_ns
 from typing import AsyncIterator, Optional
 
@@ -22,15 +23,26 @@ from fuzzy_system.fuzzy import temperature_centroid
 
 # --- CONFIGURAÇÕES DO INFLUXDB ---
 INFLUX_URL = os.getenv("INFLUX_URL", "http://3.135.246.204:8086")
+
+INFLUX_TOKEN_FILE = Path(__file__).resolve().parents[1] / "Data" / "token.txt"
+
 INFLUX_TOKEN = os.getenv("INFLUX_TOKEN")
+
+if not INFLUX_TOKEN and INFLUX_TOKEN_FILE.is_file():
+    INFLUX_TOKEN = INFLUX_TOKEN_FILE.read_text(encoding="utf-8").strip() or None
+
 INFLUX_ORG = os.getenv("INFLUX_ORG", "minha_org")
+
 INFLUX_BUCKET = os.getenv("INFLUX_BUCKET", "teste")
+
 INFLUX_NODE_TAG = os.getenv("INFLUX_NODE_TAG", "node_id")
+
 JANELA_VALIDADE_SEGUNDOS = 150
 INTERVALO_SEGUNDOS = 60
+
 MQTT_HOST = os.getenv("MQTT_HOST", "127.0.0.1")
 MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
-MQTT_LEVEL_TOPIC = os.getenv("MQTT_LEVEL_TOPIC", "/esp32/level")
+MQTT_COMMAND_TOPIC = os.getenv("MQTT_COMMAND_TOPIC", "/esp32/command")
 
 logger = logging.getLogger(__name__)
 
@@ -81,14 +93,14 @@ def publicar_centroide(centroide: float, ts_ms: Optional[int] = None) -> None:
         separators=(",", ":"),
     )
     mqtt_publish.single(
-        topic=MQTT_LEVEL_TOPIC,
+        topic=MQTT_COMMAND_TOPIC,
         payload=payload,
         qos=1,
         retain=False,
         hostname=MQTT_HOST,
         port=MQTT_PORT,
     )
-    logger.info("Centroide %.2f publicado em %s.", centroide, MQTT_LEVEL_TOPIC)
+    logger.info("Centroide %.2f publicado em %s.", centroide, MQTT_COMMAND_TOPIC)
 
 
 def ler_ultimas_temperaturas_validas(

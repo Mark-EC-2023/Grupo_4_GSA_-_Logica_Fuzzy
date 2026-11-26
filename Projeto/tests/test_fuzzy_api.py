@@ -81,7 +81,7 @@ class InfluxInputTests(unittest.TestCase):
         save.assert_called_once_with(25.0, api.calcular_centroide_fuzzy(25.0))
         publish.assert_called_once_with(api.calcular_centroide_fuzzy(25.0))
 
-    def test_publishes_required_payload_with_qos_one_and_no_retain(self):
+    def test_publishes_command_with_qos_one_and_no_retain(self):
         with (
             patch.object(api.mqtt_publish, "single") as publish,
             patch.object(api, "time_ns", return_value=1_731_590_400_123_000_000),
@@ -89,7 +89,7 @@ class InfluxInputTests(unittest.TestCase):
             api.publicar_centroide(57.3)
 
         args, kwargs = publish.call_args
-        self.assertEqual(kwargs["topic"], "/esp32/level")
+        self.assertEqual(kwargs["topic"], "/esp32/command")
         self.assertEqual(
             json.loads(kwargs["payload"]),
             {"ts_ms": 1_731_590_400_123, "level": 57.3},

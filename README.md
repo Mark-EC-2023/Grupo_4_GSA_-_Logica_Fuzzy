@@ -199,6 +199,10 @@ source .venv/bin/activate
 python -m uvicorn teste_API:app --app-dir Projeto/src --reload
 ```
 
+O token do InfluxDB é lido de `Projeto/Data/token.txt` por padrão. A variável
+de ambiente `INFLUX_TOKEN`, quando definida, tem prioridade sobre esse arquivo.
+O arquivo de token é ignorado pelo Git; não o adicione ao controle de versão.
+
 O valor `centroid_percent` representa 0% como nenhuma necessidade de
 resfriamento e 100% como resfriamento máximo. Com amostras válidas, a API
 também publica o resultado MQTT a cada 60 s.
@@ -229,7 +233,7 @@ da amostra. A idade é calculada a partir de `ts_ms`, não do horário de escrit
 do ponto no InfluxDB. O último valor de cada nó com até 150 s de idade é
 considerado; sem nós válidos, nenhuma mensagem MQTT é publicada.
 
-A saída é publicada no tópico `/esp32/level`, com QoS 1 e `retain=False`. O
+A saída é publicada no tópico `/esp32/command`, com QoS 1 e `retain=False`. O
 payload contém o instante do cálculo (Unix em milissegundos) e o nível fuzzy:
 
 ```json
@@ -240,6 +244,9 @@ payload contém o instante do cálculo (Unix em milissegundos) e o nível fuzzy:
 ```
 
 Configure `MQTT_HOST` com o endereço do broker acessível pela API e pela
-ESP32; `MQTT_PORT` assume `1883` por padrão. A ESP32 deve assinar exatamente
-`/esp32/level`. Sem uma amostra válida, a API não publica mensagem, permitindo
-que a central aplique o modo seguro.
+ESP32; `MQTT_PORT` assume `1883` por padrão. O tópico pode ser alterado por
+`MQTT_COMMAND_TOPIC`, cujo padrão é `/esp32/command`. A ESP32 deve assinar
+exatamente esse tópico. Sem uma amostra válida, a API não publica mensagem,
+permitindo que a central aplique o modo seguro. O broker ainda não está
+incluído no projeto; quando disponibilizado, basta configurar `MQTT_HOST` e
+`MQTT_PORT` para apontar para ele.
