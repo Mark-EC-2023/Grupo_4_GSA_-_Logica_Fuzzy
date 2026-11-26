@@ -188,16 +188,21 @@ e adequado a recursos embarcados.
 
 O cálculo fuzzy reutilizável está em
 [`Projeto/src/fuzzy_system/fuzzy.py`](Projeto/src/fuzzy_system/fuzzy.py), e a
-API com processamento periódico está em
-[`Projeto/src/teste_API.py`](Projeto/src/teste_API.py). A API consulta o
+orquestração do processamento está em
+[`Projeto/src/fuzzy_system/controller.py`](Projeto/src/fuzzy_system/controller.py).
+A API e seu processamento periódico estão em
+[`Projeto/src/api/app.py`](Projeto/src/api/app.py), com os adaptadores de
+InfluxDB e MQTT em `Projeto/src/comunicacao/`. A API consulta o
 InfluxDB a cada 60 s, calcula a média das últimas amostras válidas por nó
 (janela máxima de 150 s, validada por `ts_ms`) e grava o centroide no InfluxDB.
 Para executar a API a partir da raiz do repositório:
 
 ```bash
 source .venv/bin/activate
-python -m uvicorn teste_API:app --app-dir Projeto/src --reload
+python -m uvicorn api.app:app --app-dir Projeto/src --reload
 ```
+
+O módulo `teste_API` continua disponível como ponto de entrada legado.
 
 O token do InfluxDB é lido de `Projeto/Data/token.txt` por padrão. A variável
 de ambiente `INFLUX_TOKEN`, quando definida, tem prioridade sobre esse arquivo.
