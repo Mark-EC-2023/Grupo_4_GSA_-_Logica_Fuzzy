@@ -195,11 +195,12 @@ A API e seu processamento periódico estão em
 InfluxDB e MQTT em `Projeto/src/comunicacao/`. A cada 150 s, a API consulta os
 últimos 150 s da medição `sensores`, campo `temp`, no bucket de origem `wsn`,
 filtrando os nós `node` 3 e 4 e a tag `topic=wsn/central/sensores`. Para
-cada nó, usa a temperatura mais recente dentro da janela, calcula a média
-quando ambos possuem leitura, aplica o fuzzy e grava a temperatura média e o
-centroide no bucket de saída `teste`. O campo `centroid_percent` também é
-gravado no bucket `wsn`, na medição `fuzzy_result`. Se faltar leitura recente
-de qualquer nó, nada é gravado.
+cada nó, usa a temperatura mais recente dentro da janela. Se faltar uma
+temperatura recente, busca a última temperatura armazenada daquele nó. O
+fallback não tem limite de idade e o cálculo usa qualquer nó que tenha alguma
+leitura gravada; se nenhum tiver, não há gravação nem publicação MQTT. O
+resultado é gravado no bucket `teste`, e o campo `centroid_percent` também é
+gravado no bucket `wsn`, na medição `fuzzy_result`.
 Para depuração, a consulta imprime no terminal as tags, timestamp e temperatura
 de cada registro retornado, além dos valores aceitos para os nós 3 e 4. Também
 consulta o campo `umid` e imprime a média de umidade recente dos nós disponíveis;
@@ -249,9 +250,11 @@ em milissegundos e intensidade de 0 a 100:
 ```
 
 O grupo 3 deve consumir `ts_ms` para validar a idade da amostra; não deve usar
-o horário de escrita no InfluxDB. Se não houver leitura válida de ambos os nós
-na janela de 150 s, a API omite a publicação; a central deve aplicar seu modo
-seguro.
+o horário de escrita no InfluxDB. O timestamp enviado é o da leitura mais
+antiga usada no cálculo, então um fallback antigo não será apresentado como
+uma amostra nova. A resposta da API informa `usou_fallback` e
+`timestamp_dados_ms`. A central deve definir como agir quando essa amostra
+estiver velha.
 
 O broker padrão é `172.31.4.252:1883`, com usuário `adm_mqtt`. Esses valores
 podem ser substituídos por `MQTT_HOST`, `MQTT_PORT` e `MQTT_USER`. Configure a

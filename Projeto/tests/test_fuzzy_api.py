@@ -2,6 +2,7 @@ import json
 import os
 import unittest
 from contextlib import redirect_stdout
+from datetime import datetime, timedelta, timezone
 from io import StringIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -111,11 +112,32 @@ class InfluxInputTests(unittest.TestCase):
                 self.assertEqual(settings._load_influx_token(), "file-token")
 
     def test_queries_latest_recent_temperature_for_nodes_three_and_four(self):
+        sample_time = datetime.now(timezone.utc)
         records = [
-            {"node": "3", "topic": "wsn/central/sensores", "_value": 20.0},
-            {"node": "4", "topic": "wsn/central/sensores", "_value": 22.0},
-            {"node": "4", "topic": "wrong/topic", "_value": 99.0},
-            {"node": "5", "topic": "wsn/central/sensores", "_value": 99.0},
+            {
+                "node": "3",
+                "topic": "wsn/central/sensores",
+                "_value": 20.0,
+                "_time": sample_time,
+            },
+            {
+                "node": "4",
+                "topic": "wsn/central/sensores",
+                "_value": 22.0,
+                "_time": sample_time,
+            },
+            {
+                "node": "4",
+                "topic": "wrong/topic",
+                "_value": 99.0,
+                "_time": sample_time,
+            },
+            {
+                "node": "5",
+                "topic": "wsn/central/sensores",
+                "_value": 99.0,
+                "_time": sample_time,
+            },
         ]
         table = SimpleNamespace(
             records=[SimpleNamespace(values=record) for record in records]
@@ -127,7 +149,10 @@ class InfluxInputTests(unittest.TestCase):
         ):
             samples = influxdb.ler_ultimas_temperaturas_validas()
 
-        self.assertEqual(dict(samples), {"3": 20.0, "4": 22.0})
+        self.assertEqual(
+            {sample.node_id: sample.valor for sample in samples},
+            {"3": 20.0, "4": 22.0},
+        )
         query_text = query.call_args.args[0]
         self.assertIn('from(bucket: "wsn")', query_text)
         self.assertIn("range(start: -150s)", query_text)
@@ -139,10 +164,110 @@ class InfluxInputTests(unittest.TestCase):
         self.assertIn("wrong/topic", output.getvalue())
         self.assertIn("value=20.0", output.getvalue())
 
+    def test_falls_back_to_history_only_for_nodes_without_recent_temperature(self):
+        recent_time = datetime.now(timezone.utc) - timedelta(seconds=30)
+        old_time = recent_time - timedelta(days=2)
+        recent_table = SimpleNamespace(
+            records=[
+                SimpleNamespace(
+                    values={
+                        "node": "3",
+                        "topic": "wsn/central/sensores",
+                        "_value": 23.0,
+                        "_time": recent_time,
+                    }
+                )
+            ]
+        )
+        history_table = SimpleNamespace(
+            records=[
+                SimpleNamespace(
+                    values={
+                        "node": "4",
+                        "topic": "wsn/central/sensores",
+                        "_value": 29.0,
+                        "_time": old_time,
+                    }
+                )
+            ]
+        )
+
+        with (
+            patch.object(
+                influxdb.query_api,
+                "query",
+                side_effect=[[recent_table], [history_table]],
+            ) as query,
+            redirect_stdout(StringIO()),
+        ):
+            samples = influxdb.ler_ultimas_temperaturas_validas()
+
+        self.assertEqual(
+            [(sample.node_id, sample.valor) for sample in samples],
+            [("3", 23.0), ("4", 29.0)],
+        )
+        self.assertFalse(samples[0].fallback)
+        self.assertTrue(samples[1].fallback)
+        self.assertEqual(samples[1].timestamp, old_time)
+        self.assertIn("range(start: -150s)", query.call_args_list[0].args[0])
+        history_query = query.call_args_list[1].args[0]
+        self.assertIn("range(start: 1970-01-01T00:00:00Z)", history_query)
+        self.assertIn('r["node"] == "4"', history_query)
+
+    def test_reads_latest_stored_temperatures_when_recent_window_is_empty(self):
+        old_time = datetime.now(timezone.utc) - timedelta(days=1)
+        empty_table = SimpleNamespace(records=[])
+        history_table = SimpleNamespace(
+            records=[
+                SimpleNamespace(
+                    values={
+                        "node": node_id,
+                        "topic": "wsn/central/sensores",
+                        "_value": value,
+                        "_time": old_time,
+                    }
+                )
+                for node_id, value in (("3", 24.0), ("4", 28.0))
+            ]
+        )
+
+        with (
+            patch.object(
+                influxdb.query_api,
+                "query",
+                side_effect=[[empty_table], [history_table]],
+            ) as query,
+            redirect_stdout(StringIO()),
+        ):
+            samples = influxdb.ler_ultimas_temperaturas_validas()
+
+        self.assertEqual(
+            [(sample.node_id, sample.valor) for sample in samples],
+            [("3", 24.0), ("4", 28.0)],
+        )
+        self.assertTrue(all(sample.fallback for sample in samples))
+        self.assertTrue(
+            all(
+                "range(start: 1970-01-01T00:00:00Z)" in call.args[0]
+                for call in query.call_args_list[1:]
+            )
+        )
+
     def test_reads_recent_humidity_for_both_nodes(self):
+        sample_time = datetime.now(timezone.utc)
         records = [
-            {"node": "3", "topic": "wsn/central/sensores", "_value": 62.0},
-            {"node": "4", "topic": "wsn/central/sensores", "_value": 68.0},
+            {
+                "node": "3",
+                "topic": "wsn/central/sensores",
+                "_value": 62.0,
+                "_time": sample_time,
+            },
+            {
+                "node": "4",
+                "topic": "wsn/central/sensores",
+                "_value": 68.0,
+                "_time": sample_time,
+            },
         ]
         table = SimpleNamespace(
             records=[SimpleNamespace(values=record) for record in records]
@@ -154,19 +279,45 @@ class InfluxInputTests(unittest.TestCase):
         ):
             samples = influxdb.ler_ultimas_umidades_validas()
 
-        self.assertEqual(dict(samples), {"3": 62.0, "4": 68.0})
+        self.assertEqual(
+            {sample.node_id: sample.valor for sample in samples},
+            {"3": 62.0, "4": 68.0},
+        )
         self.assertIn('r["_field"] == "umid"', query.call_args.args[0])
 
-    def test_does_not_write_when_either_expected_node_is_missing(self):
+    def test_processes_temperature_from_a_single_available_node(self):
+        sample_time = datetime(2026, 11, 27, 0, 0, tzinfo=timezone.utc)
         with (
             patch.object(
                 controller,
                 "ler_ultimas_temperaturas_validas",
-                return_value=[("3", 22.0)],
+                return_value=[
+                    influxdb.LeituraSensor("3", 22.0, sample_time, fallback=True)
+                ],
             ),
             patch.object(controller, "ler_ultimas_umidades_validas", return_value=[]),
             patch.object(controller, "salvar_centroide") as save,
             patch.object(controller, "publicar_centroide") as publish,
+            redirect_stdout(StringIO()),
+        ):
+            result = controller.processar_media_temperaturas_recentes()
+
+        self.assertEqual(result["temperatura_c"], 22.0)
+        self.assertEqual(result["nos_validos"], 1)
+        self.assertTrue(result["usou_fallback"])
+        save.assert_called_once_with(22.0, result["centroid_percent"])
+        publish.assert_called_once_with(
+            result["centroid_percent"],
+            ts_ms=int(sample_time.timestamp() * 1000),
+        )
+
+    def test_does_not_process_when_no_temperature_has_ever_been_stored(self):
+        with (
+            patch.object(controller, "ler_ultimas_temperaturas_validas", return_value=[]),
+            patch.object(controller, "ler_ultimas_umidades_validas", return_value=[]),
+            patch.object(controller, "salvar_centroide") as save,
+            patch.object(controller, "publicar_centroide") as publish,
+            redirect_stdout(StringIO()),
         ):
             result = controller.processar_media_temperaturas_recentes()
 
@@ -175,16 +326,24 @@ class InfluxInputTests(unittest.TestCase):
         publish.assert_not_called()
 
     def test_writes_centroid_from_mean_of_latest_valid_nodes(self):
+        node3_time = datetime(2026, 11, 27, 0, 0, tzinfo=timezone.utc)
+        node4_time = node3_time + timedelta(seconds=10)
         with (
             patch.object(
                 controller,
                 "ler_ultimas_temperaturas_validas",
-                return_value=[("3", 20.0), ("4", 30.0)],
+                return_value=[
+                    influxdb.LeituraSensor("3", 20.0, node3_time),
+                    influxdb.LeituraSensor("4", 30.0, node4_time),
+                ],
             ),
             patch.object(
                 controller,
                 "ler_ultimas_umidades_validas",
-                return_value=[("3", 62.0), ("4", 68.0)],
+                return_value=[
+                    influxdb.LeituraSensor("3", 62.0, node3_time),
+                    influxdb.LeituraSensor("4", 68.0, node4_time),
+                ],
             ),
             patch.object(controller, "salvar_centroide") as save,
             patch.object(controller, "publicar_centroide") as publish,
@@ -195,7 +354,11 @@ class InfluxInputTests(unittest.TestCase):
         self.assertEqual(result["temperatura_c"], 25.0)
         self.assertEqual(result["nos_validos"], 2)
         save.assert_called_once_with(25.0, controller.calcular_centroide_fuzzy(25.0))
-        publish.assert_called_once_with(result["centroid_percent"])
+        self.assertFalse(result["usou_fallback"])
+        publish.assert_called_once_with(
+            result["centroid_percent"],
+            ts_ms=int(node3_time.timestamp() * 1000),
+        )
         self.assertIn("Média de umidade dos nós 3, 4: 65.00%", output.getvalue())
 
     def test_mqtt_publisher_uses_authenticated_server_level_payload(self):

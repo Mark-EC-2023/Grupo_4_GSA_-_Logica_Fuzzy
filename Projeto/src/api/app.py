@@ -15,7 +15,6 @@ from config.settings import (
     INFLUX_OUTPUT_BUCKET,
     INFLUX_SOURCE_BUCKET,
     INTERVALO_SEGUNDOS,
-    JANELA_CONSULTA_SEGUNDOS,
 )
 from fuzzy_system.controller import (
     calcular_centroide_fuzzy,
@@ -87,7 +86,7 @@ def calcular_manual(dados: LeituraManual) -> dict[str, object]:
 
 @app.post("/fuzzy/processar-recente")
 def processar_ultimo_do_influx() -> dict[str, object]:
-    """Lê a última amostra válida de cada nó e grava o centroide da média."""
+    """Calcula o centroide usando as temperaturas recentes ou as últimas disponíveis."""
     try:
         resultado = processar_media_temperaturas_recentes()
     except MQTTPublishError as error:
@@ -99,10 +98,7 @@ def processar_ultimo_do_influx() -> dict[str, object]:
     if resultado is None:
         raise HTTPException(
             status_code=404,
-            detail=(
-                f"Não há leitura válida para ambos os nós 3 e 4 nos últimos "
-                f"{JANELA_CONSULTA_SEGUNDOS} segundos."
-            ),
+            detail="Não há nenhuma temperatura armazenada para os nós 3 ou 4.",
         )
 
     return {
