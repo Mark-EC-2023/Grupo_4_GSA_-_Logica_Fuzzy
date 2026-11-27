@@ -269,3 +269,37 @@ ciclo seguinte.
 
 O controlador fuzzy atual usa somente temperatura. A umidade é consultada para
 depuração, mas ainda não participa das regras fuzzy.
+
+### Executar a API com Docker
+
+O container executa somente a API; o InfluxDB e o broker MQTT devem estar
+acessíveis pela rede a partir do host Docker. Na raiz do repositório, copie o
+arquivo de exemplo e configure as URLs, os tokens e as senhas:
+
+```bash
+cp .env.example .env
+```
+
+Edite `.env` com os endereços alcançáveis **a partir do host/container**.
+Não use `127.0.0.1` para um InfluxDB ou broker que esteja fora do container.
+O endereço privado `172.31.x.x` só funciona quando o host Docker tem rota para
+a rede correspondente. Não versione nem compartilhe o arquivo `.env`.
+
+Construa e inicie a API em segundo plano:
+
+```bash
+docker compose up --build -d
+```
+
+Por padrão, a documentação da API ficará em
+`http://localhost:8001/docs`. Para consultar o estado do container e os logs:
+
+```bash
+docker compose ps
+docker compose logs -f fuzzy-api
+```
+
+O serviço inicia um único worker Uvicorn para evitar duplicar a tarefa
+periódica de cálculo/publicação. Para pará-lo, use `docker compose down`.
+Após alterar o código ou o Dockerfile, execute novamente
+`docker compose up --build -d`.

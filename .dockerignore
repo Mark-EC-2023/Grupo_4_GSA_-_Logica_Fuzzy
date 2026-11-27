@@ -1,0 +1,9 @@
+*
+!Dockerfile
+!Documentação/
+Documentação/*
+!Documentação/requirements.txt
+!Projeto/
+Projeto/*
+!Projeto/src/
+!Projeto/src/**
