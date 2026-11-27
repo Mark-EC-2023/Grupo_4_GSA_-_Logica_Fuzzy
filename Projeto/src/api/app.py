@@ -10,6 +10,7 @@ from influxdb_client.client.exceptions import InfluxDBError
 from pydantic import BaseModel
 from urllib3.exceptions import HTTPError
 
+from comunicacao.mqtt import MQTTPublishError
 from config.settings import (
     INFLUX_OUTPUT_BUCKET,
     INFLUX_SOURCE_BUCKET,
@@ -38,8 +39,8 @@ async def processar_periodicamente() -> None:
         await asyncio.sleep(max(0.0, proxima_execucao - loop.time()))
         try:
             await asyncio.to_thread(processar_media_temperaturas_recentes)
-        except (InfluxDBError, HTTPError, OSError):
-            logger.exception("Falha no processamento periódico do InfluxDB.")
+        except (InfluxDBError, HTTPError, OSError, MQTTPublishError):
+            logger.exception("Falha no processamento periódico.")
         proxima_execucao += INTERVALO_SEGUNDOS
         if proxima_execucao <= loop.time():
             proxima_execucao = loop.time() + INTERVALO_SEGUNDOS
@@ -87,7 +88,14 @@ def calcular_manual(dados: LeituraManual) -> dict[str, object]:
 @app.post("/fuzzy/processar-recente")
 def processar_ultimo_do_influx() -> dict[str, object]:
     """Lê a última amostra válida de cada nó e grava o centroide da média."""
-    resultado = processar_media_temperaturas_recentes()
+    try:
+        resultado = processar_media_temperaturas_recentes()
+    except MQTTPublishError as error:
+        logger.exception("Centroide calculado, mas falhou a publicação MQTT.")
+        raise HTTPException(
+            status_code=502,
+            detail="Centroide processado, mas não foi possível enviar o comando MQTT.",
+        ) from error
     if resultado is None:
         raise HTTPException(
             status_code=404,

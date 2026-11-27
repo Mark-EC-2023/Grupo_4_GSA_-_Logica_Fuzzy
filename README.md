@@ -193,12 +193,13 @@ orquestração do processamento está em
 A API e seu processamento periódico estão em
 [`Projeto/src/api/app.py`](Projeto/src/api/app.py), com os adaptadores de
 InfluxDB e MQTT em `Projeto/src/comunicacao/`. A cada 150 s, a API consulta os
-últimos 600 s (10 min) da medição `sensores`, campo `temp`, no bucket de origem `wsn`,
+últimos 150 s da medição `sensores`, campo `temp`, no bucket de origem `wsn`,
 filtrando os nós `node` 3 e 4 e a tag `topic=wsn/central/sensores`. Para
 cada nó, usa a temperatura mais recente dentro da janela, calcula a média
 quando ambos possuem leitura, aplica o fuzzy e grava a temperatura média e o
-centroide no bucket de saída `teste`. Se faltar leitura recente de qualquer
-nó, nada é gravado.
+centroide no bucket de saída `teste`. O campo `centroid_percent` também é
+gravado no bucket `wsn`, na medição `fuzzy_result`. Se faltar leitura recente
+de qualquer nó, nada é gravado.
 Para depuração, a consulta imprime no terminal as tags, timestamp e temperatura
 de cada registro retornado, além dos valores aceitos para os nós 3 e 4. Também
 consulta o campo `umid` e imprime a média de umidade recente dos nós disponíveis;
@@ -214,11 +215,12 @@ O módulo `teste_API` continua disponível como ponto de entrada legado.
 
 O token do InfluxDB é lido de `Projeto/Data/token.txt` por padrão. A variável
 de ambiente `INFLUX_TOKEN`, quando definida, tem prioridade sobre esse arquivo.
-O arquivo de token é ignorado pelo Git; não o adicione ao controle de versão.
+O token precisa de leitura em `wsn` e escrita em `wsn` e `teste`. O arquivo de
+token é ignorado pelo Git; não o adicione ao controle de versão.
 
 O valor `centroid_percent` representa 0% como nenhuma necessidade de
-resfriamento e 100% como resfriamento máximo. O processamento não publica
-comandos MQTT no momento.
+resfriamento e 100% como resfriamento máximo. Após gravar o resultado, o fluxo
+WSN publica o centroide no MQTT.
 
 ### Geração e envio das simulações LHS
 
@@ -239,18 +241,28 @@ resultados, é exibida no terminal e salva em
 
 ### MQTT
 
-O envio MQTT está desativado: a API atualmente apenas grava o resultado fuzzy
-no bucket `teste`. A ponte MQTT independente descrita anteriormente não faz
-parte desta versão; a publicação ao broker poderá ser integrada numa etapa
-futura.
+O nível fuzzy é publicado no tópico `/server/level`, em JSON com timestamp Unix
+em milissegundos e intensidade de 0 a 100:
 
-Para uma futura integração, `level` deve variar de 0 a 100: zero significa
-nenhuma necessidade de resfriamento e 100 significa resfriamento máximo. O
-grupo 3 deve consumir `ts_ms` para validar a idade da amostra; não se deve usar
-o horário de escrita no Influx. Se não houver uma amostra válida na janela de
-150 s, a publicação deve ser omitida para que a central entre em modo seguro.
+```json
+{"ts_ms": 1731590400123, "level": 40.33}
+```
 
-O controlador atual usa somente temperatura. Embora a documentação inicial
-descreva conjuntos de umidade, eles ainda não participam das regras
-implementadas; isso precisa ser explicitamente alinhado antes de alterar o
-contrato do fuzzy.
+O grupo 3 deve consumir `ts_ms` para validar a idade da amostra; não deve usar
+o horário de escrita no InfluxDB. Se não houver leitura válida de ambos os nós
+na janela de 150 s, a API omite a publicação; a central deve aplicar seu modo
+seguro.
+
+O broker padrão é `172.31.4.252:1883`, com usuário `adm_mqtt`. Esses valores
+podem ser substituídos por `MQTT_HOST`, `MQTT_PORT` e `MQTT_USER`. Configure a
+senha pela variável `MQTT_PASS` no ambiente de execução; não grave a senha no
+código nem em arquivos versionados. O tópico pode ser alterado por
+`MQTT_COMMAND_TOPIC`. A publicação usa QoS 1, sem retenção.
+
+Se a publicação falhar, o endpoint de processamento recente responde com erro
+HTTP 502, sem indicar que o comando foi entregue; a medição já gravada no
+InfluxDB permanece. O ciclo periódico registra a falha e tenta novamente no
+ciclo seguinte.
+
+O controlador fuzzy atual usa somente temperatura. A umidade é consultada para
+depuração, mas ainda não participa das regras fuzzy.

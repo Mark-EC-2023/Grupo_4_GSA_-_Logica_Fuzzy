@@ -1,3 +1,4 @@
+import json
 import os
 import unittest
 from contextlib import redirect_stdout
@@ -45,7 +46,7 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(health_result["bucket"], "teste")
         self.assertEqual(settings.INFLUX_NODE_TAG, "node")
         self.assertEqual(settings.INTERVALO_SEGUNDOS, 150)
-        self.assertEqual(settings.JANELA_CONSULTA_SEGUNDOS, 600)
+        self.assertEqual(settings.JANELA_CONSULTA_SEGUNDOS, 150)
         self.assertEqual(calculation["centroid_percent"], 0.0)
         self.assertFalse(calculation["salvo_no_influx"])
 
@@ -55,6 +56,17 @@ class ApiTests(unittest.TestCase):
                 processar_ultimo_do_influx()
 
         self.assertEqual(error.exception.status_code, 404)
+
+    def test_recent_endpoint_reports_mqtt_publish_failure(self):
+        with patch(
+            "api.app.processar_media_temperaturas_recentes",
+            side_effect=mqtt.MQTTPublishError("publish failed"),
+        ):
+            with self.assertLogs("api.app", level="ERROR"):
+                with self.assertRaises(HTTPException) as error:
+                    processar_ultimo_do_influx()
+
+        self.assertEqual(error.exception.status_code, 502)
 
 
 class FuzzyControllerTests(unittest.TestCase):
@@ -118,7 +130,7 @@ class InfluxInputTests(unittest.TestCase):
         self.assertEqual(dict(samples), {"3": 20.0, "4": 22.0})
         query_text = query.call_args.args[0]
         self.assertIn('from(bucket: "wsn")', query_text)
-        self.assertIn("range(start: -600s)", query_text)
+        self.assertIn("range(start: -150s)", query_text)
         self.assertIn('r["_measurement"] == "sensores"', query_text)
         self.assertIn('r["_field"] == "temp"', query_text)
         self.assertIn('group(columns: ["node", "topic"])', query_text)
@@ -154,7 +166,7 @@ class InfluxInputTests(unittest.TestCase):
             ),
             patch.object(controller, "ler_ultimas_umidades_validas", return_value=[]),
             patch.object(controller, "salvar_centroide") as save,
-            patch.object(mqtt.mqtt_publish, "single") as publish,
+            patch.object(controller, "publicar_centroide") as publish,
         ):
             result = controller.processar_media_temperaturas_recentes()
 
@@ -175,7 +187,7 @@ class InfluxInputTests(unittest.TestCase):
                 return_value=[("3", 62.0), ("4", 68.0)],
             ),
             patch.object(controller, "salvar_centroide") as save,
-            patch.object(mqtt.mqtt_publish, "single") as publish,
+            patch.object(controller, "publicar_centroide") as publish,
             redirect_stdout(StringIO()) as output,
         ):
             result = controller.processar_media_temperaturas_recentes()
@@ -183,21 +195,73 @@ class InfluxInputTests(unittest.TestCase):
         self.assertEqual(result["temperatura_c"], 25.0)
         self.assertEqual(result["nos_validos"], 2)
         save.assert_called_once_with(25.0, controller.calcular_centroide_fuzzy(25.0))
-        publish.assert_not_called()
+        publish.assert_called_once_with(result["centroid_percent"])
         self.assertIn("Média de umidade dos nós 3, 4: 65.00%", output.getvalue())
+
+    def test_mqtt_publisher_uses_authenticated_server_level_payload(self):
+        with (
+            patch.object(mqtt, "MQTT_PASS", "unit-test-secret"),
+            patch.object(mqtt.mqtt_publish, "single") as publish,
+            redirect_stdout(StringIO()) as output,
+        ):
+            mqtt.publicar_centroide(40.33, ts_ms=1731590400123)
+
+        arguments = publish.call_args.kwargs
+        self.assertEqual(arguments["topic"], "/server/level")
+        self.assertEqual(
+            json.loads(arguments["payload"]),
+            {"ts_ms": 1731590400123, "level": 40.33},
+        )
+        self.assertEqual(arguments["hostname"], "172.31.4.252")
+        self.assertEqual(arguments["port"], 1883)
+        self.assertEqual(
+            arguments["auth"],
+            {"username": "adm_mqtt", "password": "unit-test-secret"},
+        )
+        self.assertEqual(arguments["qos"], 1)
+        self.assertFalse(arguments["retain"])
+        self.assertIn(
+            '[MQTT debug] Enviando para 172.31.4.252:1883 '
+            'no tópico /server/level: {"ts_ms":1731590400123,"level":40.33}',
+            output.getvalue(),
+        )
+        self.assertNotIn("unit-test-secret", output.getvalue())
+
+    def test_mqtt_publisher_rejects_missing_password(self):
+        with patch.object(mqtt, "MQTT_PASS", None):
+            with self.assertRaises(mqtt.MQTTPublishError):
+                mqtt.publicar_centroide(40.33)
+
+    def test_mqtt_publisher_surfaces_broker_connection_failure(self):
+        with (
+            patch.object(mqtt, "MQTT_PASS", "unit-test-secret"),
+            patch.object(
+                mqtt.mqtt_publish,
+                "single",
+                side_effect=OSError("broker unavailable"),
+            ),
+        ):
+            with self.assertRaises(mqtt.MQTTPublishError):
+                mqtt.publicar_centroide(40.33)
 
     def test_writes_fuzzy_result_to_output_bucket(self):
         class FakePoint:
-            def __init__(self, _measurement):
-                pass
+            def __init__(self, measurement):
+                self.measurement = measurement
+                self.tags = {}
+                self.fields = {}
+                self.timestamp = None
 
-            def tag(self, *_args):
+            def tag(self, key, value):
+                self.tags[key] = value
                 return self
 
-            def field(self, *_args):
+            def field(self, key, value):
+                self.fields[key] = value
                 return self
 
-            def time(self, *_args):
+            def time(self, timestamp, _precision):
+                self.timestamp = timestamp
                 return self
 
         with (
@@ -206,7 +270,26 @@ class InfluxInputTests(unittest.TestCase):
         ):
             influxdb.salvar_centroide(25.0, 57.3)
 
-        self.assertEqual(write.call_args.kwargs["bucket"], "teste")
+        self.assertEqual(
+            [call.kwargs["bucket"] for call in write.call_args_list],
+            ["teste", "wsn"],
+        )
+        self.assertEqual(
+            write.call_args_list[0].kwargs["record"].measurement,
+            "fuzzy_result",
+        )
+        self.assertEqual(
+            write.call_args_list[0].kwargs["record"].fields["centroid_percent"],
+            57.3,
+        )
+        self.assertEqual(
+            write.call_args_list[1].kwargs["record"].measurement,
+            "fuzzy_result",
+        )
+        self.assertEqual(
+            write.call_args_list[1].kwargs["record"].fields,
+            {"centroid_percent": 57.3},
+        )
 
     def test_legacy_entry_point_exports_modular_app(self):
         self.assertIs(legacy_api.app, app)

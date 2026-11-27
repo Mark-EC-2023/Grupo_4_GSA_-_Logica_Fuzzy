@@ -8,6 +8,7 @@ from comunicacao.influxdb import (
     ler_ultimas_umidades_validas,
     salvar_centroide,
 )
+from comunicacao.mqtt import publicar_centroide
 from config.settings import INFLUX_NODE_IDS, JANELA_CONSULTA_SEGUNDOS
 from fuzzy_system.fuzzy import temperature_centroid
 
@@ -50,6 +51,7 @@ def processar_media_temperaturas_recentes() -> Optional[dict[str, float | int]]:
     temperatura_media = sum(valor for _, valor in temperaturas) / len(temperaturas)
     centroide = calcular_centroide_fuzzy(temperatura_media)
     salvar_centroide(temperatura_media, centroide)
+    publicar_centroide(centroide)
     logger.info(
         "Média de %s nó(s) gravada: temperatura=%.2f °C, centroid_percent=%.2f",
         len(temperaturas),

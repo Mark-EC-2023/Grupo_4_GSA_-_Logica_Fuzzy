@@ -48,6 +48,19 @@ def salvar_centroide(
         ponto = ponto.field("humidity_pct", float(umidade))
 
     write_api.write(bucket=INFLUX_OUTPUT_BUCKET, org=INFLUX_ORG, record=ponto)
+    if INFLUX_SOURCE_BUCKET != INFLUX_OUTPUT_BUCKET:
+        ponto_wsn = (
+            Point("fuzzy_result")
+            .tag("grupo", "grupo4")
+            .tag("origem", "api_python")
+            .field("centroid_percent", float(centroide))
+            .time(ts, WritePrecision.S)
+        )
+        write_api.write(
+            bucket=INFLUX_SOURCE_BUCKET,
+            org=INFLUX_ORG,
+            record=ponto_wsn,
+        )
 
 
 def _ler_ultimos_valores_validos(

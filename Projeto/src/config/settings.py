@@ -36,9 +36,11 @@ INFLUX_SENSOR_TOPIC = os.getenv(
     "wsn/central/sensores",
 )
 
-JANELA_CONSULTA_SEGUNDOS = 600
+JANELA_CONSULTA_SEGUNDOS = 150
 INTERVALO_SEGUNDOS = 150
 
-MQTT_HOST = os.getenv("MQTT_HOST", "127.0.0.1")
+MQTT_HOST = os.getenv("MQTT_HOST", "172.31.4.252")
 MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
-MQTT_COMMAND_TOPIC = os.getenv("MQTT_COMMAND_TOPIC", "/esp32/command")
+MQTT_USER = os.getenv("MQTT_USER", "adm_mqtt")
+MQTT_PASS = os.getenv("MQTT_PASS")
+MQTT_COMMAND_TOPIC = os.getenv("MQTT_COMMAND_TOPIC", "/server/level")
