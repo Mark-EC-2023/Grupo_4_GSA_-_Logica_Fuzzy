@@ -7,8 +7,7 @@ from comunicacao.influxdb import (
     ler_ultimas_temperaturas_validas,
     salvar_centroide,
 )
-from comunicacao.mqtt import publicar_centroide
-from config.settings import JANELA_VALIDADE_SEGUNDOS
+from config.settings import INFLUX_NODE_IDS, JANELA_CONSULTA_SEGUNDOS
 from fuzzy_system.fuzzy import temperature_centroid
 
 logger = logging.getLogger(__name__)
@@ -19,22 +18,22 @@ def calcular_centroide_fuzzy(temperatura: float, amostras: int = 1000) -> float:
     return temperature_centroid(temperatura, amostras).centroid
 
 
-def processar_media_ultimos_150s(
-    agora_ms: Optional[int] = None,
-) -> Optional[dict[str, float | int]]:
+def processar_media_temperaturas_recentes() -> Optional[dict[str, float | int]]:
     """Calcula e grava o centroide da média das últimas amostras válidas por nó."""
-    temperaturas = ler_ultimas_temperaturas_validas(agora_ms)
-    if not temperaturas:
+    temperaturas = ler_ultimas_temperaturas_validas()
+    nodes_found = {node_id for node_id, _ in temperaturas}
+    missing_nodes = set(INFLUX_NODE_IDS) - nodes_found
+    if missing_nodes:
         logger.info(
-            "Nenhuma amostra com ts_ms válido nos últimos %s segundos; nada gravado.",
-            JANELA_VALIDADE_SEGUNDOS,
+            "Sem leitura recente para os nós %s nos últimos %s segundos; nada gravado.",
+            ", ".join(sorted(missing_nodes)),
+            JANELA_CONSULTA_SEGUNDOS,
         )
         return None
 
     temperatura_media = sum(valor for _, valor in temperaturas) / len(temperaturas)
     centroide = calcular_centroide_fuzzy(temperatura_media)
     salvar_centroide(temperatura_media, centroide)
-    publicar_centroide(centroide)
     logger.info(
         "Média de %s nó(s) gravada: temperatura=%.2f °C, centroid_percent=%.2f",
         len(temperaturas),

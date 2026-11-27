@@ -1,6 +1,7 @@
-import json
 import os
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
@@ -40,11 +41,16 @@ class ApiTests(unittest.TestCase):
         )
 
         self.assertEqual(health_result["status"], "online")
+        self.assertEqual(health_result["source_bucket"], "wsn")
+        self.assertEqual(health_result["bucket"], "teste")
+        self.assertEqual(settings.INFLUX_NODE_TAG, "node")
+        self.assertEqual(settings.INTERVALO_SEGUNDOS, 150)
+        self.assertEqual(settings.JANELA_CONSULTA_SEGUNDOS, 600)
         self.assertEqual(calculation["centroid_percent"], 0.0)
         self.assertFalse(calculation["salvo_no_influx"])
 
     def test_recent_endpoint_returns_404_when_no_valid_samples_exist(self):
-        with patch("api.app.processar_media_ultimos_150s", return_value=None):
+        with patch("api.app.processar_media_temperaturas_recentes", return_value=None):
             with self.assertRaises(HTTPException) as error:
                 processar_ultimo_do_influx()
 
@@ -92,36 +98,46 @@ class InfluxInputTests(unittest.TestCase):
             ):
                 self.assertEqual(settings._load_influx_token(), "file-token")
 
-    def test_uses_latest_fresh_sample_per_node_by_ts_ms(self):
-        now_ms = 1_000_000
+    def test_queries_latest_recent_temperature_for_nodes_three_and_four(self):
         records = [
-            {"node_id": "a", "temperature_c": 20.0, "ts_ms": now_ms - 20_000},
-            {"node_id": "a", "temperature_c": 22.0, "ts_ms": now_ms - 10_000},
-            {"node_id": "b", "temperature_c": 40.0, "ts_ms": now_ms - 150_001},
-            {"node_id": "c", "temperature_c": 30.0, "ts_ms": now_ms + 1},
-            {"node_id": "d", "temperature_c": 25.0, "ts_ms": now_ms - 30_000},
-            {"node_id": "e", "temperature_c": 18.0, "ts_ms": now_ms - 150_000},
+            {"node": "3", "topic": "wsn/central/sensores", "_value": 20.0},
+            {"node": "4", "topic": "wsn/central/sensores", "_value": 22.0},
+            {"node": "4", "topic": "wrong/topic", "_value": 99.0},
+            {"node": "5", "topic": "wsn/central/sensores", "_value": 99.0},
         ]
         table = SimpleNamespace(
             records=[SimpleNamespace(values=record) for record in records]
         )
 
-        with patch.object(influxdb.query_api, "query", return_value=[table]) as query:
-            samples = influxdb.ler_ultimas_temperaturas_validas(now_ms)
-
-        self.assertEqual(dict(samples), {"a": 22.0, "d": 25.0, "e": 18.0})
-        query_text = query.call_args.args[0]
-        self.assertIn("range(start: -150s)", query_text)
-        self.assertIn('"ts_ms"', query_text)
-        self.assertIn("pivot(", query_text)
-
-    def test_does_not_write_when_no_node_has_a_valid_sample(self):
         with (
-            patch.object(controller, "ler_ultimas_temperaturas_validas", return_value=[]),
-            patch.object(controller, "salvar_centroide") as save,
-            patch.object(controller, "publicar_centroide") as publish,
+            patch.object(influxdb.query_api, "query", return_value=[table]) as query,
+            redirect_stdout(StringIO()) as output,
         ):
-            result = controller.processar_media_ultimos_150s(agora_ms=1_000_000)
+            samples = influxdb.ler_ultimas_temperaturas_validas()
+
+        self.assertEqual(dict(samples), {"3": 20.0, "4": 22.0})
+        query_text = query.call_args.args[0]
+        self.assertIn('from(bucket: "wsn")', query_text)
+        self.assertIn("range(start: -600s)", query_text)
+        self.assertIn('r["_measurement"] == "sensores"', query_text)
+        self.assertIn('r["_field"] == "temp"', query_text)
+        self.assertIn('group(columns: ["node", "topic"])', query_text)
+        self.assertIn("|> last()", query_text)
+        self.assertIn("node", output.getvalue())
+        self.assertIn("wrong/topic", output.getvalue())
+        self.assertIn("temperature=20.0", output.getvalue())
+
+    def test_does_not_write_when_either_expected_node_is_missing(self):
+        with (
+            patch.object(
+                controller,
+                "ler_ultimas_temperaturas_validas",
+                return_value=[("3", 22.0)],
+            ),
+            patch.object(controller, "salvar_centroide") as save,
+            patch.object(mqtt.mqtt_publish, "single") as publish,
+        ):
+            result = controller.processar_media_temperaturas_recentes()
 
         self.assertIsNone(result)
         save.assert_not_called()
@@ -132,35 +148,39 @@ class InfluxInputTests(unittest.TestCase):
             patch.object(
                 controller,
                 "ler_ultimas_temperaturas_validas",
-                return_value=[("a", 20.0), ("b", 30.0)],
+                return_value=[("3", 20.0), ("4", 30.0)],
             ),
             patch.object(controller, "salvar_centroide") as save,
-            patch.object(controller, "publicar_centroide") as publish,
+            patch.object(mqtt.mqtt_publish, "single") as publish,
         ):
-            result = controller.processar_media_ultimos_150s(agora_ms=1_000_000)
+            result = controller.processar_media_temperaturas_recentes()
 
         self.assertEqual(result["temperatura_c"], 25.0)
         self.assertEqual(result["nos_validos"], 2)
         save.assert_called_once_with(25.0, controller.calcular_centroide_fuzzy(25.0))
-        publish.assert_called_once_with(
-            controller.calcular_centroide_fuzzy(25.0)
-        )
+        publish.assert_not_called()
 
-    def test_publishes_command_with_qos_one_and_no_retain(self):
+    def test_writes_fuzzy_result_to_output_bucket(self):
+        class FakePoint:
+            def __init__(self, _measurement):
+                pass
+
+            def tag(self, *_args):
+                return self
+
+            def field(self, *_args):
+                return self
+
+            def time(self, *_args):
+                return self
+
         with (
-            patch.object(mqtt.mqtt_publish, "single") as publish,
-            patch.object(mqtt, "time_ns", return_value=1_731_590_400_123_000_000),
+            patch.object(influxdb, "Point", FakePoint),
+            patch.object(influxdb.write_api, "write") as write,
         ):
-            mqtt.publicar_centroide(57.3)
+            influxdb.salvar_centroide(25.0, 57.3)
 
-        args, kwargs = publish.call_args
-        self.assertEqual(kwargs["topic"], "/esp32/command")
-        self.assertEqual(
-            json.loads(kwargs["payload"]),
-            {"ts_ms": 1_731_590_400_123, "level": 57.3},
-        )
-        self.assertEqual(kwargs["qos"], 1)
-        self.assertFalse(kwargs["retain"])
+        self.assertEqual(write.call_args.kwargs["bucket"], "teste")
 
     def test_legacy_entry_point_exports_modular_app(self):
         self.assertIs(legacy_api.app, app)

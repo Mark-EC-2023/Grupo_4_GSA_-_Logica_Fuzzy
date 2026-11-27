@@ -192,9 +192,15 @@ orquestração do processamento está em
 [`Projeto/src/fuzzy_system/controller.py`](Projeto/src/fuzzy_system/controller.py).
 A API e seu processamento periódico estão em
 [`Projeto/src/api/app.py`](Projeto/src/api/app.py), com os adaptadores de
-InfluxDB e MQTT em `Projeto/src/comunicacao/`. A API consulta o
-InfluxDB a cada 60 s, calcula a média das últimas amostras válidas por nó
-(janela máxima de 150 s, validada por `ts_ms`) e grava o centroide no InfluxDB.
+InfluxDB e MQTT em `Projeto/src/comunicacao/`. A cada 150 s, a API consulta os
+últimos 600 s (10 min) da medição `sensores`, campo `temp`, no bucket de origem `wsn`,
+filtrando os nós `node` 3 e 4 e a tag `topic=wsn/central/sensores`. Para
+cada nó, usa a temperatura mais recente dentro da janela, calcula a média
+quando ambos possuem leitura, aplica o fuzzy e grava a temperatura média e o
+centroide no bucket de saída `teste`. Se faltar leitura recente de qualquer
+nó, nada é gravado.
+Para depuração, a consulta imprime no terminal as tags, timestamp e temperatura
+de cada registro retornado, além dos valores aceitos para os nós 3 e 4.
 Para executar a API a partir da raiz do repositório:
 
 ```bash
@@ -209,8 +215,8 @@ de ambiente `INFLUX_TOKEN`, quando definida, tem prioridade sobre esse arquivo.
 O arquivo de token é ignorado pelo Git; não o adicione ao controle de versão.
 
 O valor `centroid_percent` representa 0% como nenhuma necessidade de
-resfriamento e 100% como resfriamento máximo. Com amostras válidas, a API
-também publica o resultado MQTT a cada 60 s.
+resfriamento e 100% como resfriamento máximo. O processamento não publica
+comandos MQTT no momento.
 
 ### Geração e envio das simulações LHS
 
@@ -229,29 +235,7 @@ ignorada. A tabela completa das 200 simulações, incluindo parâmetros LHS e
 resultados, é exibida no terminal e salva em
 `Projeto/Data/simulacoes_lhs_200.csv`.
 
-### Publicação MQTT para a ESP32
+### MQTT
 
-A API continua lendo a telemetria do InfluxDB; o MQTT é usado para enviar a
-saída à ESP32. A medição de telemetria precisa armazenar `node_id`, o campo de
-temperatura (`temperature_c` ou `cooling_temperature_c`) e o `ts_ms` original
-da amostra. A idade é calculada a partir de `ts_ms`, não do horário de escrita
-do ponto no InfluxDB. O último valor de cada nó com até 150 s de idade é
-considerado; sem nós válidos, nenhuma mensagem MQTT é publicada.
-
-A saída é publicada no tópico `/esp32/command`, com QoS 1 e `retain=False`. O
-payload contém o instante do cálculo (Unix em milissegundos) e o nível fuzzy:
-
-```json
-{
-  "ts_ms": 1731590400123,
-  "level": 57.3
-}
-```
-
-Configure `MQTT_HOST` com o endereço do broker acessível pela API e pela
-ESP32; `MQTT_PORT` assume `1883` por padrão. O tópico pode ser alterado por
-`MQTT_COMMAND_TOPIC`, cujo padrão é `/esp32/command`. A ESP32 deve assinar
-exatamente esse tópico. Sem uma amostra válida, a API não publica mensagem,
-permitindo que a central aplique o modo seguro. O broker ainda não está
-incluído no projeto; quando disponibilizado, basta configurar `MQTT_HOST` e
-`MQTT_PORT` para apontar para ele.
+O envio MQTT está desativado: a API atualmente apenas grava o resultado fuzzy
+no bucket `teste`. A publicação ao broker poderá ser ativada numa etapa futura.

@@ -3,19 +3,24 @@
 import json
 from datetime import datetime, timezone
 from math import isfinite
-from time import time_ns
 from typing import Optional
 
 from influxdb_client import InfluxDBClient, Point, WritePrecision
 from influxdb_client.client.write_api import SYNCHRONOUS
 
 from config.settings import (
-    INFLUX_BUCKET,
+    INFLUX_NODE_IDS,
     INFLUX_NODE_TAG,
     INFLUX_ORG,
+    INFLUX_OUTPUT_BUCKET,
+    INFLUX_SENSOR_TOPIC,
+    INFLUX_SOURCE_BUCKET,
+    INFLUX_SOURCE_MEASUREMENT,
     INFLUX_TOKEN,
+    INFLUX_TEMPERATURE_FIELD,
+    INFLUX_TOPIC_TAG,
     INFLUX_URL,
-    JANELA_VALIDADE_SEGUNDOS,
+    JANELA_CONSULTA_SEGUNDOS,
 )
 
 client = InfluxDBClient(url=INFLUX_URL, token=INFLUX_TOKEN, org=INFLUX_ORG)
@@ -41,46 +46,42 @@ def salvar_centroide(
     if umidade is not None:
         ponto = ponto.field("humidity_pct", float(umidade))
 
-    write_api.write(bucket=INFLUX_BUCKET, org=INFLUX_ORG, record=ponto)
+    write_api.write(bucket=INFLUX_OUTPUT_BUCKET, org=INFLUX_ORG, record=ponto)
 
 
-def ler_ultimas_temperaturas_validas(
-    agora_ms: Optional[int] = None,
-) -> list[tuple[str, float]]:
-    """Retorna a última amostra recente de cada nó, validada pelo ts_ms."""
-    agora_ms = agora_ms if agora_ms is not None else time_ns() // 1_000_000
-    measurement_filter = " or ".join(
-        f'r["_measurement"] == {json.dumps(measurement)}'
-        for measurement in ("climate_data", "telemetry")
-    )
-    field_filter = " or ".join(
-        f'r["_field"] == {json.dumps(field)}'
-        for field in ("cooling_temperature_c", "temperature_c", "ts_ms")
-    )
+def ler_ultimas_temperaturas_validas() -> list[tuple[str, float]]:
+    """Lê a última temperatura recente dos nós 3 e 4 no bucket WSN."""
     query = f"""
-    from(bucket: {json.dumps(INFLUX_BUCKET)})
-      |> range(start: -{JANELA_VALIDADE_SEGUNDOS}s)
-      |> filter(fn: (r) => {measurement_filter})
-      |> filter(fn: (r) => {field_filter})
-      |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
+    from(bucket: {json.dumps(INFLUX_SOURCE_BUCKET)})
+      |> range(start: -{JANELA_CONSULTA_SEGUNDOS}s)
+      |> filter(fn: (r) => r["_measurement"] == {json.dumps(INFLUX_SOURCE_MEASUREMENT)})
+      |> filter(fn: (r) => r["_field"] == {json.dumps(INFLUX_TEMPERATURE_FIELD)})
+      |> group(columns: [{json.dumps(INFLUX_NODE_TAG)}, {json.dumps(INFLUX_TOPIC_TAG)}])
+      |> last()
     """
     tabelas = query_api.query(query)
-    ultimas_por_no: dict[str, tuple[int, float]] = {}
+    ultimas_por_no: dict[str, float] = {}
+    registros_encontrados = 0
     for tabela in tabelas:
         for record in tabela.records:
             valores = record.values
+            registros_encontrados += 1
             no = valores.get(INFLUX_NODE_TAG)
-            ts_ms = valores.get("ts_ms")
-            temperatura = valores.get("cooling_temperature_c")
-            if temperatura is None:
-                temperatura = valores.get("temperature_c")
-
-            if not isinstance(no, str) or not no.strip():
-                continue
-            if isinstance(ts_ms, bool) or not isinstance(ts_ms, int):
-                continue
-            idade_ms = agora_ms - ts_ms
-            if not 0 <= idade_ms <= JANELA_VALIDADE_SEGUNDOS * 1000:
+            topico = valores.get(INFLUX_TOPIC_TAG)
+            temperatura = valores.get("_value")
+            tags = {
+                key: value
+                for key, value in valores.items()
+                if not key.startswith("_")
+            }
+            print(
+                "[WSN debug] "
+                f"tags={tags!r}, time={valores.get('_time')!r}, "
+                f"measurement={valores.get('_measurement')!r}, "
+                f"field={valores.get('_field')!r}, temperature={temperatura!r}",
+                flush=True,
+            )
+            if no not in INFLUX_NODE_IDS or topico != INFLUX_SENSOR_TOPIC:
                 continue
             if isinstance(temperatura, bool) or not isinstance(
                 temperatura, (int, float)
@@ -91,8 +92,20 @@ def ler_ultimas_temperaturas_validas(
             if not isfinite(temperatura):
                 continue
 
-            amostra_anterior = ultimas_por_no.get(no)
-            if amostra_anterior is None or ts_ms > amostra_anterior[0]:
-                ultimas_por_no[no] = (ts_ms, temperatura)
+            ultimas_por_no[no] = temperatura
 
-    return [(no, amostra[1]) for no, amostra in ultimas_por_no.items()]
+    if registros_encontrados == 0:
+        print(
+            "[WSN debug] Nenhum registro retornado: "
+            f"bucket={INFLUX_SOURCE_BUCKET!r}, "
+            f"measurement={INFLUX_SOURCE_MEASUREMENT!r}, "
+            f"field={INFLUX_TEMPERATURE_FIELD!r}, "
+            f"range={JANELA_CONSULTA_SEGUNDOS}s.",
+            flush=True,
+        )
+    print(
+        f"[WSN debug] Temperaturas aceitas: {ultimas_por_no!r}",
+        flush=True,
+    )
+
+    return list(ultimas_por_no.items())

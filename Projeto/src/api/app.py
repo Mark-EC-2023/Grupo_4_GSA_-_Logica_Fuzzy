@@ -7,18 +7,18 @@ from typing import AsyncIterator, Optional
 
 from fastapi import FastAPI, HTTPException
 from influxdb_client.client.exceptions import InfluxDBError
-from paho.mqtt import MQTTException
 from pydantic import BaseModel
 from urllib3.exceptions import HTTPError
 
 from config.settings import (
-    INFLUX_BUCKET,
+    INFLUX_OUTPUT_BUCKET,
+    INFLUX_SOURCE_BUCKET,
     INTERVALO_SEGUNDOS,
-    JANELA_VALIDADE_SEGUNDOS,
+    JANELA_CONSULTA_SEGUNDOS,
 )
 from fuzzy_system.controller import (
     calcular_centroide_fuzzy,
-    processar_media_ultimos_150s,
+    processar_media_temperaturas_recentes,
 )
 from comunicacao.influxdb import salvar_centroide
 
@@ -37,9 +37,9 @@ async def processar_periodicamente() -> None:
     while True:
         await asyncio.sleep(max(0.0, proxima_execucao - loop.time()))
         try:
-            await asyncio.to_thread(processar_media_ultimos_150s)
-        except (InfluxDBError, HTTPError, MQTTException, OSError):
-            logger.exception("Falha no processamento periódico do InfluxDB/MQTT.")
+            await asyncio.to_thread(processar_media_temperaturas_recentes)
+        except (InfluxDBError, HTTPError, OSError):
+            logger.exception("Falha no processamento periódico do InfluxDB.")
         proxima_execucao += INTERVALO_SEGUNDOS
         if proxima_execucao <= loop.time():
             proxima_execucao = loop.time() + INTERVALO_SEGUNDOS
@@ -63,7 +63,11 @@ app = FastAPI(title="API Controlador Fuzzy - InfluxDB", lifespan=lifespan)
 
 @app.get("/health")
 def health() -> dict[str, str]:
-    return {"status": "online", "bucket": INFLUX_BUCKET}
+    return {
+        "status": "online",
+        "source_bucket": INFLUX_SOURCE_BUCKET,
+        "bucket": INFLUX_OUTPUT_BUCKET,
+    }
 
 
 @app.post("/fuzzy/calcular")
@@ -83,17 +87,18 @@ def calcular_manual(dados: LeituraManual) -> dict[str, object]:
 @app.post("/fuzzy/processar-recente")
 def processar_ultimo_do_influx() -> dict[str, object]:
     """Lê a última amostra válida de cada nó e grava o centroide da média."""
-    resultado = processar_media_ultimos_150s()
+    resultado = processar_media_temperaturas_recentes()
     if resultado is None:
         raise HTTPException(
             status_code=404,
             detail=(
-                f"Nenhuma amostra com ts_ms válido nos últimos "
-                f"{JANELA_VALIDADE_SEGUNDOS} segundos."
+                f"Não há leitura válida para ambos os nós 3 e 4 nos últimos "
+                f"{JANELA_CONSULTA_SEGUNDOS} segundos."
             ),
         )
 
     return {
-        "bucket": INFLUX_BUCKET,
+        "source_bucket": INFLUX_SOURCE_BUCKET,
+        "bucket": INFLUX_OUTPUT_BUCKET,
         **resultado,
     }
