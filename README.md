@@ -60,21 +60,22 @@ Para a temperatura, foram definidos os conjuntos:
 
 - **Fria:** triangular `[15, 15, 25]`;
 - **Morna:** triangular `[20, 26, 32]`;
-- **Quente:** trapezoidal `[28, 35, 45, 45]`.
+- **Quente:** trapezoidal `[25, 45, 45, 45]`, saturando em 45 °C.
 
-Para a umidade relativa:
+Os conjuntos de umidade abaixo são referência para uma etapa futura e não
+participam do controlador atual:
 
 - **Seca:** triangular `[0, 0, 40]`;
 - **Ideal:** triangular `[30, 50, 70]`;
 - **Úmida:** trapezoidal `[60, 80, 100, 100]`.
 
-Cada leitura numérica é convertida em graus de pertinência entre 0 e 1. A
-implementação atual usa funções triangulares e trapezoidais próprias, o que
-facilita portar o cálculo para C/C++.
+Cada leitura numérica é convertida em graus de pertinência entre 0 e 1. O
+centroide é calibrado para retornar 0% até 15 °C e 100% a partir de 45 °C,
+com resposta não decrescente entre esses limites.
 
 ### 3.3 Inferência e defuzzificação
 
-O protótipo usa composição de Zadeh:
+O controlador atual usa temperatura e composição de Zadeh:
 
 - operador **E**: mínimo entre os graus de pertinência;
 - agregação das regras: máximo;
@@ -85,13 +86,13 @@ Uma base inicial de regras é:
 
 | Regra | Condição | Saída |
 |---|---|---|
-| 1 | Se temperatura é fria **e** umidade é ideal | atuação fraca |
-| 2 | Se temperatura é morna **e** umidade é úmida | atuação média |
-| 3 | Se temperatura é quente **e** umidade é seca | atuação forte |
+| 1 | Temperatura fria | atuação fraca |
+| 2 | Temperatura morna | atuação média |
+| 3 | Temperatura quente | atuação forte |
 
-Essa base é um ponto de partida. Ela deve ser ampliada após ensaios, pois
-combinações como “quente e úmida” também precisam produzir uma resposta
-coerente de conforto e controle.
+As regras não usam umidade. A escala do centroide é calibrada para que
+temperaturas até 15 °C resultem em 0% e temperaturas a partir de 45 °C em
+100%.
 
 O centroide é calculado por:
 
@@ -113,18 +114,16 @@ inicializar_sensor()
 inicializar_saida_pwm()
 
 repetir a cada periodo:
-    temperatura, umidade = ler_sensor()
+    temperatura = ler_sensor()
 
-    se leitura_invalida(temperatura, umidade):
+    se leitura_invalida(temperatura):
         aplicar_saida_segura()
         continuar
 
     t_frio, t_morno, t_quente = fuzzificar_temperatura(temperatura)
-    u_seca, u_ideal, u_umida = fuzzificar_umidade(umidade)
-
-    r1 = minimo(t_frio,   u_ideal)
-    r2 = minimo(t_morno,  u_umida)
-    r3 = minimo(t_quente, u_seca)
+    r1 = t_frio
+    r2 = t_morno
+    r3 = t_quente
 
     saida = centroide(r1, r2, r3)
     saida = limitar(saida, 0, 100)
@@ -185,85 +184,73 @@ microcontrolador. Com essa validação, a leitura contínua de temperatura e
 umidade poderá ser convertida em um comando de controle simples, interpretável
 e adequado a recursos embarcados.
 
-## Versão modular
+## Execução do controlador
 
-A versão reutilizável do controlador está em
-[`Projeto/fuzzy_controller.py`](Projeto/fuzzy_controller.py). O notebook
-[`Projeto/Teste_Fuzzy_Modular.ipynb`](Projeto/Teste_Fuzzy_Modular.ipynb) apenas
-importa o módulo e demonstra a temperatura usada nos exemplos.
-
-Para calcular o centroide diretamente no terminal:
+O cálculo fuzzy reutilizável está em
+[`Projeto/src/fuzzy_system/fuzzy.py`](Projeto/src/fuzzy_system/fuzzy.py), e a
+orquestração do processamento está em
+[`Projeto/src/fuzzy_system/controller.py`](Projeto/src/fuzzy_system/controller.py).
+A API e seu processamento periódico estão em
+[`Projeto/src/api/app.py`](Projeto/src/api/app.py), com os adaptadores de
+InfluxDB e MQTT em `Projeto/src/comunicacao/`. A cada 150 s, a API consulta os
+últimos 600 s (10 min) da medição `sensores`, campo `temp`, no bucket de origem `wsn`,
+filtrando os nós `node` 3 e 4 e a tag `topic=wsn/central/sensores`. Para
+cada nó, usa a temperatura mais recente dentro da janela, calcula a média
+quando ambos possuem leitura, aplica o fuzzy e grava a temperatura média e o
+centroide no bucket de saída `teste`. Se faltar leitura recente de qualquer
+nó, nada é gravado.
+Para depuração, a consulta imprime no terminal as tags, timestamp e temperatura
+de cada registro retornado, além dos valores aceitos para os nós 3 e 4. Também
+consulta o campo `umid` e imprime a média de umidade recente dos nós disponíveis;
+esse valor é apenas para depuração e não altera o fuzzy nem é gravado no bucket.
+Para executar a API a partir da raiz do repositório:
 
 ```bash
-python Projeto/scripts/gerar_centroide.py 22.142539
+source .venv/bin/activate
+python -m uvicorn api.app:app --app-dir Projeto/src --reload
 ```
 
-O script também grava em `centroide.json` o payload mínimo consumido pela
-central. O tópico deve ser combinado com o grupo 3; uma sugestão é
-`grupo4/fuzzy/level`. A publicação deve ocorrer a cada 60 s, com QoS 1 e
-`retain=False`:
+O módulo `teste_API` continua disponível como ponto de entrada legado.
+
+O token do InfluxDB é lido de `Projeto/Data/token.txt` por padrão. A variável
+de ambiente `INFLUX_TOKEN`, quando definida, tem prioridade sobre esse arquivo.
+O arquivo de token é ignorado pelo Git; não o adicione ao controle de versão.
+
+O valor `centroid_percent` representa 0% como nenhuma necessidade de
+resfriamento e 100% como resfriamento máximo. O processamento não publica
+comandos MQTT no momento.
+
+### Geração e envio das simulações LHS
+
+Para gerar os cenários e, se `INFLUX_TOKEN` estiver configurado, enviá-los a
+partir da raiz do repositório:
 
 ```bash
-python Projeto/scripts/gerar_centroide.py 22.142539 \
-  --output payload.json --json-only
+source .venv/bin/activate
+python "Projeto/Data/data.py"
 ```
 
-O payload publicado deve conter somente o instante NTP do cálculo e o nível:
+O envio deste script usa sempre o bucket `teste`; `INFLUX_BUCKET` não altera
+esse destino. A URL e a organização continuam configuráveis por `INFLUX_URL` e
+`INFLUX_ORG`. Sem `INFLUX_TOKEN`, os cálculos são executados, mas a gravação é
+ignorada. A tabela completa das 200 simulações, incluindo parâmetros LHS e
+resultados, é exibida no terminal e salva em
+`Projeto/Data/simulacoes_lhs_200.csv`.
 
-```json
-{
-  "ts_ms": 1731590400123,
-  "level": 40.33
-}
-```
+### MQTT
 
-`level` varia de 0 a 100: zero significa nenhuma necessidade de resfriamento
-e 100 significa resfriamento máximo. O grupo 3 deve consumir `ts_ms` para
-validar a idade da amostra; não se deve usar o horário de escrita no Influx.
-Se não houver uma amostra válida na janela de 150 s, a publicação deve ser
-omitida para que a central entre em modo seguro.
+O envio MQTT está desativado: a API atualmente apenas grava o resultado fuzzy
+no bucket `teste`. A ponte MQTT independente descrita anteriormente não faz
+parte desta versão; a publicação ao broker poderá ser integrada numa etapa
+futura.
+
+Para uma futura integração, `level` deve variar de 0 a 100: zero significa
+nenhuma necessidade de resfriamento e 100 significa resfriamento máximo. O
+grupo 3 deve consumir `ts_ms` para validar a idade da amostra; não se deve usar
+o horário de escrita no Influx. Se não houver uma amostra válida na janela de
+150 s, a publicação deve ser omitida para que a central entre em modo seguro.
 
 O controlador atual usa somente temperatura. Embora a documentação inicial
 descreva conjuntos de umidade, eles ainda não participam das regras
 implementadas; isso precisa ser explicitamente alinhado antes de alterar o
 contrato do fuzzy.
-
-### Integração MQTT
-
-O serviço [`Projeto/mqtt_bridge.py`](Projeto/mqtt_bridge.py) implementa a
-ponte entre a ESP32, o fuzzy e a central. Ele espera telemetria neste formato:
-
-```json
-{
-  "node_id": "sala-1",
-  "temperature_c": 30.0,
-  "ts_ms": 1731590400123
-}
-```
-
-Por padrão, ele:
-
-- assina `grupo4/esp32/telemetry` com QoS 1;
-- mantém o último valor de cada nó;
-- considera válido somente `ts_ms` com até 150 s de idade;
-- calcula a média dos nós válidos;
-- publica o resultado a cada 60 s em `grupo4/fuzzy/level` e
-  `grupo4/ac/command`, com QoS 1 e `retain=False`;
-- não publica quando não existe amostra válida.
-
-Instale as dependências e execute:
-
-```bash
-pip install -r requirements.txt
-MQTT_HOST=192.168.0.50 python Projeto/mqtt_bridge.py
-```
-
-O broker Mosquitto deve estar executando em `192.168.0.50` (substitua pelo IP
-da máquina servidora). Os parâmetros podem ser alterados por ambiente:
-`MQTT_HOST`, `MQTT_PORT`, `MQTT_TELEMETRY_TOPIC`, `MQTT_LEVEL_TOPIC`,
-`MQTT_COMMAND_TOPIC`, `MQTT_PUBLISH_INTERVAL` e `MQTT_SAMPLE_MAX_AGE`.
-
-O grupo 3 ainda precisa confirmar os tópicos oficiais e o formato do comando
-que a ESP32 aplicará. A leitura do InfluxDB também não está neste repositório;
-até sua integração, a ponte usa a telemetria MQTT e calcula a idade diretamente
-com o `ts_ms` enviado pelo nó.
