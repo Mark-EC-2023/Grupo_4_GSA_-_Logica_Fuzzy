@@ -9,6 +9,7 @@ from influxdb_client import InfluxDBClient, Point, WritePrecision
 from influxdb_client.client.write_api import SYNCHRONOUS
 
 from config.settings import (
+    INFLUX_HUMIDITY_FIELD,
     INFLUX_NODE_IDS,
     INFLUX_NODE_TAG,
     INFLUX_ORG,
@@ -49,13 +50,15 @@ def salvar_centroide(
     write_api.write(bucket=INFLUX_OUTPUT_BUCKET, org=INFLUX_ORG, record=ponto)
 
 
-def ler_ultimas_temperaturas_validas() -> list[tuple[str, float]]:
-    """Lê a última temperatura recente dos nós 3 e 4 no bucket WSN."""
+def _ler_ultimos_valores_validos(
+    campo: str,
+    descricao: str,
+) -> list[tuple[str, float]]:
     query = f"""
     from(bucket: {json.dumps(INFLUX_SOURCE_BUCKET)})
       |> range(start: -{JANELA_CONSULTA_SEGUNDOS}s)
       |> filter(fn: (r) => r["_measurement"] == {json.dumps(INFLUX_SOURCE_MEASUREMENT)})
-      |> filter(fn: (r) => r["_field"] == {json.dumps(INFLUX_TEMPERATURE_FIELD)})
+      |> filter(fn: (r) => r["_field"] == {json.dumps(campo)})
       |> group(columns: [{json.dumps(INFLUX_NODE_TAG)}, {json.dumps(INFLUX_TOPIC_TAG)}])
       |> last()
     """
@@ -68,7 +71,7 @@ def ler_ultimas_temperaturas_validas() -> list[tuple[str, float]]:
             registros_encontrados += 1
             no = valores.get(INFLUX_NODE_TAG)
             topico = valores.get(INFLUX_TOPIC_TAG)
-            temperatura = valores.get("_value")
+            valor = valores.get("_value")
             tags = {
                 key: value
                 for key, value in valores.items()
@@ -78,34 +81,48 @@ def ler_ultimas_temperaturas_validas() -> list[tuple[str, float]]:
                 "[WSN debug] "
                 f"tags={tags!r}, time={valores.get('_time')!r}, "
                 f"measurement={valores.get('_measurement')!r}, "
-                f"field={valores.get('_field')!r}, temperature={temperatura!r}",
+                f"field={valores.get('_field')!r}, value={valor!r}",
                 flush=True,
             )
             if no not in INFLUX_NODE_IDS or topico != INFLUX_SENSOR_TOPIC:
                 continue
-            if isinstance(temperatura, bool) or not isinstance(
-                temperatura, (int, float)
-            ):
+            if isinstance(valor, bool) or not isinstance(valor, (int, float)):
                 continue
 
-            temperatura = float(temperatura)
-            if not isfinite(temperatura):
+            valor = float(valor)
+            if not isfinite(valor):
                 continue
 
-            ultimas_por_no[no] = temperatura
+            ultimas_por_no[no] = valor
 
     if registros_encontrados == 0:
         print(
             "[WSN debug] Nenhum registro retornado: "
             f"bucket={INFLUX_SOURCE_BUCKET!r}, "
             f"measurement={INFLUX_SOURCE_MEASUREMENT!r}, "
-            f"field={INFLUX_TEMPERATURE_FIELD!r}, "
+            f"field={campo!r}, "
             f"range={JANELA_CONSULTA_SEGUNDOS}s.",
             flush=True,
         )
     print(
-        f"[WSN debug] Temperaturas aceitas: {ultimas_por_no!r}",
+        f"[WSN debug] {descricao} aceitas: {ultimas_por_no!r}",
         flush=True,
     )
 
     return list(ultimas_por_no.items())
+
+
+def ler_ultimas_temperaturas_validas() -> list[tuple[str, float]]:
+    """Lê a última temperatura recente dos nós 3 e 4 no bucket WSN."""
+    return _ler_ultimos_valores_validos(
+        INFLUX_TEMPERATURE_FIELD,
+        "Temperaturas",
+    )
+
+
+def ler_ultimas_umidades_validas() -> list[tuple[str, float]]:
+    """Lê a última umidade recente dos nós 3 e 4 no bucket WSN."""
+    return _ler_ultimos_valores_validos(
+        INFLUX_HUMIDITY_FIELD,
+        "Umidades",
+    )

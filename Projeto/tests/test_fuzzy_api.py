@@ -125,7 +125,25 @@ class InfluxInputTests(unittest.TestCase):
         self.assertIn("|> last()", query_text)
         self.assertIn("node", output.getvalue())
         self.assertIn("wrong/topic", output.getvalue())
-        self.assertIn("temperature=20.0", output.getvalue())
+        self.assertIn("value=20.0", output.getvalue())
+
+    def test_reads_recent_humidity_for_both_nodes(self):
+        records = [
+            {"node": "3", "topic": "wsn/central/sensores", "_value": 62.0},
+            {"node": "4", "topic": "wsn/central/sensores", "_value": 68.0},
+        ]
+        table = SimpleNamespace(
+            records=[SimpleNamespace(values=record) for record in records]
+        )
+
+        with (
+            patch.object(influxdb.query_api, "query", return_value=[table]) as query,
+            redirect_stdout(StringIO()),
+        ):
+            samples = influxdb.ler_ultimas_umidades_validas()
+
+        self.assertEqual(dict(samples), {"3": 62.0, "4": 68.0})
+        self.assertIn('r["_field"] == "umid"', query.call_args.args[0])
 
     def test_does_not_write_when_either_expected_node_is_missing(self):
         with (
@@ -134,6 +152,7 @@ class InfluxInputTests(unittest.TestCase):
                 "ler_ultimas_temperaturas_validas",
                 return_value=[("3", 22.0)],
             ),
+            patch.object(controller, "ler_ultimas_umidades_validas", return_value=[]),
             patch.object(controller, "salvar_centroide") as save,
             patch.object(mqtt.mqtt_publish, "single") as publish,
         ):
@@ -150,8 +169,14 @@ class InfluxInputTests(unittest.TestCase):
                 "ler_ultimas_temperaturas_validas",
                 return_value=[("3", 20.0), ("4", 30.0)],
             ),
+            patch.object(
+                controller,
+                "ler_ultimas_umidades_validas",
+                return_value=[("3", 62.0), ("4", 68.0)],
+            ),
             patch.object(controller, "salvar_centroide") as save,
             patch.object(mqtt.mqtt_publish, "single") as publish,
+            redirect_stdout(StringIO()) as output,
         ):
             result = controller.processar_media_temperaturas_recentes()
 
@@ -159,6 +184,7 @@ class InfluxInputTests(unittest.TestCase):
         self.assertEqual(result["nos_validos"], 2)
         save.assert_called_once_with(25.0, controller.calcular_centroide_fuzzy(25.0))
         publish.assert_not_called()
+        self.assertIn("Média de umidade dos nós 3, 4: 65.00%", output.getvalue())
 
     def test_writes_fuzzy_result_to_output_bucket(self):
         class FakePoint:

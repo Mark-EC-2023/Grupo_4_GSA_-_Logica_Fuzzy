@@ -200,7 +200,9 @@ quando ambos possuem leitura, aplica o fuzzy e grava a temperatura média e o
 centroide no bucket de saída `teste`. Se faltar leitura recente de qualquer
 nó, nada é gravado.
 Para depuração, a consulta imprime no terminal as tags, timestamp e temperatura
-de cada registro retornado, além dos valores aceitos para os nós 3 e 4.
+de cada registro retornado, além dos valores aceitos para os nós 3 e 4. Também
+consulta o campo `umid` e imprime a média de umidade recente dos nós disponíveis;
+esse valor é apenas para depuração e não altera o fuzzy nem é gravado no bucket.
 Para executar a API a partir da raiz do repositório:
 
 ```bash
