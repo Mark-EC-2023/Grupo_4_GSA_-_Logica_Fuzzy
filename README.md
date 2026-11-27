@@ -3,7 +3,7 @@ Repositório destinado para a organização das 200 simulações estocásticas L
 
 Relatório Instrumentalização grupo 4
 
-Nome equipe: Juan, Monaliza, Gabriel Braga, Marcos
+Nome equipe: Juan, Monalisa, Gabriel Braga, Marcos
 
 Assuntos - 
 
@@ -240,4 +240,17 @@ resultados, é exibida no terminal e salva em
 ### MQTT
 
 O envio MQTT está desativado: a API atualmente apenas grava o resultado fuzzy
-no bucket `teste`. A publicação ao broker poderá ser ativada numa etapa futura.
+no bucket `teste`. A ponte MQTT independente descrita anteriormente não faz
+parte desta versão; a publicação ao broker poderá ser integrada numa etapa
+futura.
+
+Para uma futura integração, `level` deve variar de 0 a 100: zero significa
+nenhuma necessidade de resfriamento e 100 significa resfriamento máximo. O
+grupo 3 deve consumir `ts_ms` para validar a idade da amostra; não se deve usar
+o horário de escrita no Influx. Se não houver uma amostra válida na janela de
+150 s, a publicação deve ser omitida para que a central entre em modo seguro.
+
+O controlador atual usa somente temperatura. Embora a documentação inicial
+descreva conjuntos de umidade, eles ainda não participam das regras
+implementadas; isso precisa ser explicitamente alinhado antes de alterar o
+contrato do fuzzy.
