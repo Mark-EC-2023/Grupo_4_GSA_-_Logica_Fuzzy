@@ -29,7 +29,7 @@ INFLUX_HUMIDITY_FIELD = os.getenv("INFLUX_HUMIDITY_FIELD", "umid")
 
 INFLUX_NODE_TAG = os.getenv("INFLUX_NODE_TAG", "node")
 
-INFLUX_NODE_IDS = ("3", "4")
+INFLUX_NODE_IDS = ("1", "2", "3", "4", "5", "6")
 INFLUX_TOPIC_TAG = os.getenv("INFLUX_TOPIC_TAG", "topic")
 INFLUX_SENSOR_TOPIC = os.getenv(
     "INFLUX_SENSOR_TOPIC",
@@ -38,8 +38,10 @@ INFLUX_SENSOR_TOPIC = os.getenv(
 
 JANELA_CONSULTA_SEGUNDOS = 150
 INTERVALO_SEGUNDOS = 150
+VERIFICAR_IDADE_AMOSTRAS = False
 
-MQTT_HOST = os.getenv("MQTT_HOST", "172.31.4.252")
+# MQTT_HOST = os.getenv("MQTT_HOST", "172.31.4.252")
+MQTT_HOST = os.getenv("MQTT_HOST", "3.135.246.204")
 MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
 MQTT_USER = os.getenv("MQTT_USER", "adm_mqtt")
 MQTT_PASS = os.getenv("MQTT_PASS")

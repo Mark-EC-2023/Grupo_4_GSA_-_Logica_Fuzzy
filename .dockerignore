@@ -6,4 +6,15 @@ Documentação/*
 !Projeto/
 Projeto/*
 !Projeto/src/
-!Projeto/src/**
+Projeto/src/*
+!Projeto/src/api/
+!Projeto/src/api/**
+!Projeto/src/comunicacao/
+!Projeto/src/comunicacao/**
+!Projeto/src/config/
+!Projeto/src/config/**
+!Projeto/src/fuzzy_system/
+!Projeto/src/fuzzy_system/*.py
+**/__pycache__/
+**/*.py[cod]
+**/token.txt

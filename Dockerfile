@@ -9,7 +9,10 @@ COPY Documentação/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
 RUN useradd --create-home --uid 10001 appuser
-COPY --chown=appuser:appuser Projeto/src /app/src
+COPY --chown=appuser:appuser Projeto/src/api /app/src/api
+COPY --chown=appuser:appuser Projeto/src/comunicacao /app/src/comunicacao
+COPY --chown=appuser:appuser Projeto/src/config /app/src/config
+COPY --chown=appuser:appuser Projeto/src/fuzzy_system/*.py /app/src/fuzzy_system/
 
 USER appuser
 

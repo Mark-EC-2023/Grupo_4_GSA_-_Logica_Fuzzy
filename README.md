@@ -26,8 +26,11 @@ Sensor -> filtragem -> fuzzificação -> regras fuzzy -> agregação -> centroid
 
 ## Desenvolvimento
 
-A tabela de saída usada diretamente no protótipo fuzzy está em 'eplusout.sql', onde foi extraida e transfigurada para
-[`banco_dados_lhs_200.csv`](/Projeto/Data/banco_dados_lhs_200.csv), conténdo 200 pares de:
+A simulação-base do EnergyPlus está preservada em
+[`eplusout.sql`](Documentação/grupo2_instrumentacao/SALA_ARC/run/data_point/eplusout.sql).
+O script de análise gera a tabela das 200 simulações LHS em
+[`simulacoes_lhs_200.csv`](Documentação/dados_simulacao/simulacoes_lhs_200.csv),
+com temperatura e umidade:
 
 - `LHS_Temperatura_C`;
 - `LHS_Umidade_%`.
@@ -45,8 +48,8 @@ sortear todos os pontos livremente, essa estratégia reduz a concentração de
 amostras em uma mesma região e permite explorar o espaço de entrada com 200
 simulações.
 
-No projeto, o notebook
-[`Teste_Fuzzy.ipynb`](/Projeto/Teste_Fuzzy.ipynb) registra duas etapas:
+No projeto, o notebook de análise
+[`Teste_Fuzzy.ipynb`](Documentação/dados_simulacao/Teste_Fuzzy.ipynb) registra duas etapas:
 
 1. geração da matriz LHS com os parâmetros de simulação
    (`temp_setpoint`, `potencia_equip`, `taxa_infiltracao` e
@@ -194,15 +197,20 @@ A API e seu processamento periódico estão em
 [`Projeto/src/api/app.py`](Projeto/src/api/app.py), com os adaptadores de
 InfluxDB e MQTT em `Projeto/src/comunicacao/`. A cada 150 s, a API consulta os
 últimos 150 s da medição `sensores`, campo `temp`, no bucket de origem `wsn`,
-filtrando os nós `node` 3 e 4 e a tag `topic=wsn/central/sensores`. Para
+filtrando os nós `node` 1 a 6 e a tag `topic=wsn/central/sensores`. Para
 cada nó, usa a temperatura mais recente dentro da janela. Se faltar uma
-temperatura recente, busca a última temperatura armazenada daquele nó. O
-fallback não tem limite de idade e o cálculo usa qualquer nó que tenha alguma
-leitura gravada; se nenhum tiver, não há gravação nem publicação MQTT. O
-resultado é gravado no bucket `teste`, e o campo `centroid_percent` também é
-gravado no bucket `wsn`, na medição `fuzzy_result`.
+temperatura recente, busca a última temperatura armazenada daquele nó. Se
+`VERIFICAR_IDADE_AMOSTRAS` em `Projeto/src/config/settings.py` estiver ativada
+(`True`) e todas as últimas temperaturas encontradas tiverem mais de uma hora,
+o ciclo ignora os dados: não calcula nem grava o centroide e não publica no
+MQTT. A opção fica desativada (`False`) por padrão para facilitar a depuração.
+Com a opção ativada, havendo ao menos uma amostra com até uma hora, o cálculo
+segue usando os nós disponíveis; se nenhum tiver leitura armazenada, também
+não há gravação nem publicação MQTT. O resultado é gravado no bucket `teste`,
+e o campo `centroid_percent` também é gravado no bucket `wsn`, na medição
+`fuzzy_result`.
 Para depuração, a consulta imprime no terminal as tags, timestamp e temperatura
-de cada registro retornado, além dos valores aceitos para os nós 3 e 4. Também
+de cada registro retornado, além dos valores aceitos para os nós 1 a 6. Também
 consulta o campo `umid` e imprime a média de umidade recente dos nós disponíveis;
 esse valor é apenas para depuração e não altera o fuzzy nem é gravado no bucket.
 Para executar a API a partir da raiz do repositório:
@@ -233,12 +241,14 @@ source .venv/bin/activate
 python "Projeto/Data/data.py"
 ```
 
+Os arquivos de entrada são mantidos em `Documentação/grupo2_instrumentacao`.
+O CSV gerado é salvo em `Documentação/dados_simulacao/simulacoes_lhs_200.csv`.
 O envio deste script usa sempre o bucket `teste`; `INFLUX_BUCKET` não altera
 esse destino. A URL e a organização continuam configuráveis por `INFLUX_URL` e
 `INFLUX_ORG`. Sem `INFLUX_TOKEN`, os cálculos são executados, mas a gravação é
 ignorada. A tabela completa das 200 simulações, incluindo parâmetros LHS e
 resultados, é exibida no terminal e salva em
-`Projeto/Data/simulacoes_lhs_200.csv`.
+`Documentação/dados_simulacao/simulacoes_lhs_200.csv`.
 
 ### MQTT
 

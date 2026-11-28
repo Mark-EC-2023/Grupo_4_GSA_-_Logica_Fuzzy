@@ -200,7 +200,7 @@ def ler_ultimas_temperaturas_validas() -> list[LeituraSensor]:
 
 
 def ler_ultimas_umidades_validas() -> list[LeituraSensor]:
-    """Lê a última umidade recente dos nós 3 e 4 no bucket WSN."""
+    """Lê a última umidade recente dos nós configurados no bucket WSN."""
     return _ler_ultimos_valores_validos(
         INFLUX_HUMIDITY_FIELD,
         "Umidades",

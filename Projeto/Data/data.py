@@ -26,9 +26,17 @@ except ImportError:
 
 
 # --- CAMINHOS DOS DADOS REAIS ---
-BASE_DIR = Path(__file__).resolve().parent
-EPW_PATH = BASE_DIR / "CE_Quixeramobim.epw"
-EPLUSZSZ_PATH = BASE_DIR / "epluszsz.csv"
+ROOT_DIR = Path(__file__).resolve().parents[2]
+DOCUMENTACAO_DIR = ROOT_DIR / "Documentação"
+EPW_PATH = DOCUMENTACAO_DIR / "grupo2_instrumentacao" / "CE_Quixeramobim.epw"
+EPLUSZSZ_PATH = (
+    DOCUMENTACAO_DIR
+    / "grupo2_instrumentacao"
+    / "SALA_ARC"
+    / "run"
+    / "epluszsz.csv"
+)
+SIMULATION_OUTPUT_DIR = DOCUMENTACAO_DIR / "dados_simulacao"
 
 # Períodos definidos no cabeçalho TYPICAL/EXTREME PERIODS do .epw de Quixeramobim
 PERIODOS_QUIXERAMOBIM = {
@@ -371,7 +379,8 @@ if __name__ == "__main__":
         on="simulacao_id",
         validate="one_to_one",
     )
-    caminho_tabela = BASE_DIR / "simulacoes_lhs_200.csv"
+    SIMULATION_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    caminho_tabela = SIMULATION_OUTPUT_DIR / "simulacoes_lhs_200.csv"
     tabela_simulacoes.to_csv(caminho_tabela, index=False, encoding="utf-8")
     print("\n--- Tabela completa das 200 simulações de Quixeramobim ---")
     print(tabela_simulacoes.to_string(index=False))

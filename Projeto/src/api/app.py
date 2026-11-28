@@ -98,7 +98,10 @@ def processar_ultimo_do_influx() -> dict[str, object]:
     if resultado is None:
         raise HTTPException(
             status_code=404,
-            detail="Não há nenhuma temperatura armazenada para os nós 3 ou 4.",
+            detail=(
+                "Não há temperatura recente para processar: "
+                "as amostras estão ausentes ou têm mais de uma hora."
+            ),
         )
 
     return {

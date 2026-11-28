@@ -46,6 +46,7 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(health_result["source_bucket"], "wsn")
         self.assertEqual(health_result["bucket"], "teste")
         self.assertEqual(settings.INFLUX_NODE_TAG, "node")
+        self.assertEqual(settings.INFLUX_NODE_IDS, ("1", "2", "3", "4", "5", "6"))
         self.assertEqual(settings.INTERVALO_SEGUNDOS, 150)
         self.assertEqual(settings.JANELA_CONSULTA_SEGUNDOS, 150)
         self.assertEqual(calculation["centroid_percent"], 0.0)
@@ -57,6 +58,7 @@ class ApiTests(unittest.TestCase):
                 processar_ultimo_do_influx()
 
         self.assertEqual(error.exception.status_code, 404)
+        self.assertIn("mais de uma hora", error.exception.detail)
 
     def test_recent_endpoint_reports_mqtt_publish_failure(self):
         with patch(
@@ -111,34 +113,33 @@ class InfluxInputTests(unittest.TestCase):
             ):
                 self.assertEqual(settings._load_influx_token(), "file-token")
 
-    def test_queries_latest_recent_temperature_for_nodes_three_and_four(self):
+    def test_queries_latest_recent_temperature_for_all_six_nodes(self):
         sample_time = datetime.now(timezone.utc)
         records = [
             {
-                "node": "3",
+                "node": str(node_id),
                 "topic": "wsn/central/sensores",
-                "_value": 20.0,
+                "_value": float(node_id * 10),
                 "_time": sample_time,
-            },
-            {
-                "node": "4",
-                "topic": "wsn/central/sensores",
-                "_value": 22.0,
-                "_time": sample_time,
-            },
-            {
-                "node": "4",
-                "topic": "wrong/topic",
-                "_value": 99.0,
-                "_time": sample_time,
-            },
-            {
-                "node": "5",
-                "topic": "wsn/central/sensores",
-                "_value": 99.0,
-                "_time": sample_time,
-            },
+            }
+            for node_id in range(1, 7)
         ]
+        records.extend(
+            [
+                {
+                    "node": "4",
+                    "topic": "wrong/topic",
+                    "_value": 99.0,
+                    "_time": sample_time,
+                },
+                {
+                    "node": "7",
+                    "topic": "wsn/central/sensores",
+                    "_value": 99.0,
+                    "_time": sample_time,
+                },
+            ]
+        )
         table = SimpleNamespace(
             records=[SimpleNamespace(values=record) for record in records]
         )
@@ -151,7 +152,7 @@ class InfluxInputTests(unittest.TestCase):
 
         self.assertEqual(
             {sample.node_id: sample.valor for sample in samples},
-            {"3": 20.0, "4": 22.0},
+            {str(node_id): float(node_id * 10) for node_id in range(1, 7)},
         )
         query_text = query.call_args.args[0]
         self.assertIn('from(bucket: "wsn")', query_text)
@@ -253,21 +254,16 @@ class InfluxInputTests(unittest.TestCase):
             )
         )
 
-    def test_reads_recent_humidity_for_both_nodes(self):
+    def test_reads_recent_humidity_for_all_six_nodes(self):
         sample_time = datetime.now(timezone.utc)
         records = [
             {
-                "node": "3",
+                "node": str(node_id),
                 "topic": "wsn/central/sensores",
-                "_value": 62.0,
+                "_value": float(60 + node_id),
                 "_time": sample_time,
-            },
-            {
-                "node": "4",
-                "topic": "wsn/central/sensores",
-                "_value": 68.0,
-                "_time": sample_time,
-            },
+            }
+            for node_id in range(1, 7)
         ]
         table = SimpleNamespace(
             records=[SimpleNamespace(values=record) for record in records]
@@ -281,12 +277,15 @@ class InfluxInputTests(unittest.TestCase):
 
         self.assertEqual(
             {sample.node_id: sample.valor for sample in samples},
-            {"3": 62.0, "4": 68.0},
+            {
+                str(node_id): float(60 + node_id)
+                for node_id in range(1, 7)
+            },
         )
         self.assertIn('r["_field"] == "umid"', query.call_args.args[0])
 
     def test_processes_temperature_from_a_single_available_node(self):
-        sample_time = datetime(2026, 11, 27, 0, 0, tzinfo=timezone.utc)
+        sample_time = datetime.now(timezone.utc) - timedelta(seconds=30)
         with (
             patch.object(
                 controller,
@@ -326,7 +325,7 @@ class InfluxInputTests(unittest.TestCase):
         publish.assert_not_called()
 
     def test_writes_centroid_from_mean_of_latest_valid_nodes(self):
-        node3_time = datetime(2026, 11, 27, 0, 0, tzinfo=timezone.utc)
+        node3_time = datetime.now(timezone.utc) - timedelta(seconds=30)
         node4_time = node3_time + timedelta(seconds=10)
         with (
             patch.object(
@@ -360,6 +359,83 @@ class InfluxInputTests(unittest.TestCase):
             ts_ms=int(node3_time.timestamp() * 1000),
         )
         self.assertIn("Média de umidade dos nós 3, 4: 65.00%", output.getvalue())
+
+    def test_averages_temperatures_from_all_six_available_nodes(self):
+        first_node_time = datetime.now(timezone.utc) - timedelta(seconds=30)
+        readings = [
+            influxdb.LeituraSensor(
+                str(node_id),
+                float(node_id * 10),
+                first_node_time + timedelta(seconds=node_id - 1),
+            )
+            for node_id in range(1, 7)
+        ]
+        with (
+            patch.object(
+                controller,
+                "ler_ultimas_temperaturas_validas",
+                return_value=readings,
+            ),
+            patch.object(controller, "ler_ultimas_umidades_validas", return_value=[]),
+            patch.object(controller, "salvar_centroide") as save,
+            patch.object(controller, "publicar_centroide") as publish,
+            redirect_stdout(StringIO()),
+        ):
+            result = controller.processar_media_temperaturas_recentes()
+
+        self.assertEqual(result["temperatura_c"], 35.0)
+        self.assertEqual(result["nos_validos"], 6)
+        save.assert_called_once_with(35.0, controller.calcular_centroide_fuzzy(35.0))
+        publish.assert_called_once_with(
+            result["centroid_percent"],
+            ts_ms=int(first_node_time.timestamp() * 1000),
+        )
+
+    def test_skips_centroid_when_all_latest_temperatures_are_over_an_hour_old(self):
+        sample_time = datetime.now(timezone.utc) - timedelta(hours=1, seconds=1)
+        readings = [
+            influxdb.LeituraSensor(str(node_id), 20.0 + node_id, sample_time)
+            for node_id in range(1, 7)
+        ]
+        with (
+            patch.object(
+                controller,
+                "ler_ultimas_temperaturas_validas",
+                return_value=readings,
+            ),
+            patch.object(controller, "VERIFICAR_IDADE_AMOSTRAS", True),
+            patch.object(controller, "ler_ultimas_umidades_validas") as read_humidity,
+            patch.object(controller, "salvar_centroide") as save,
+            patch.object(controller, "publicar_centroide") as publish,
+        ):
+            result = controller.processar_media_temperaturas_recentes()
+
+        self.assertIsNone(result)
+        read_humidity.assert_not_called()
+        save.assert_not_called()
+        publish.assert_not_called()
+
+    def test_processes_old_temperatures_when_age_check_is_disabled(self):
+        sample_time = datetime.now(timezone.utc) - timedelta(hours=1, seconds=1)
+        with (
+            patch.object(
+                controller,
+                "ler_ultimas_temperaturas_validas",
+                return_value=[
+                    influxdb.LeituraSensor("1", 25.0, sample_time, fallback=True)
+                ],
+            ),
+            patch.object(controller, "VERIFICAR_IDADE_AMOSTRAS", False),
+            patch.object(controller, "ler_ultimas_umidades_validas", return_value=[]),
+            patch.object(controller, "salvar_centroide") as save,
+            patch.object(controller, "publicar_centroide") as publish,
+            redirect_stdout(StringIO()),
+        ):
+            result = controller.processar_media_temperaturas_recentes()
+
+        self.assertIsNotNone(result)
+        save.assert_called_once()
+        publish.assert_called_once()
 
     def test_mqtt_publisher_uses_authenticated_server_level_payload(self):
         with (
